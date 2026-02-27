@@ -1,0 +1,61 @@
+--TO DO--
+!! cant scroll to the edge of the doc (right)
+
+- home should bring to the frount of the text in line
+- selecting
+- auto both (), "", {}. [], ''
+
+redesign  actions to be built from parts
+    - selection (sel,block,word, etc)
+    - repeats (number)
+    - Action (delete, copy, jump)
+
+    b12d = delete the next 12 blocks
+    b-12d = delete the last 12 blocks
+
+
+
+
+
+
+
+
+
+
+
+
+--ACTIONS--
+# (todo)
+    modified actions (ctrl + ..) used for file management
+        save: ctrl + s
+#        write to new: ctrl + w
+        quit: ctrl + q
+#        copy: ctrl + c  (needs sel)
+        paste: ctrl + p
+        undo: ctrl + u
+        redo: ctrl + y
+        move Tinty to back: ctrl + z (fg to bring back to front)
+
+    action types: used for text manipulation
+        modifiers
+            l(line)
+            b(block)
+            w(word)
+#            a(all) - not yet added
+
+        actions
+            delete(d)
+            select(s)
+            copy(c)/yank(y)
+            paste(p)
+            paste over line(P)
+            cut(x)
+            jump forword(j)
+            jump back(J)
+            comment(/)
+            tab(t)
+            unTab(T)
+
+Extras:
+    auto saves
+    have actions that stack
