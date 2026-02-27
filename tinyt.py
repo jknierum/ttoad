@@ -10,6 +10,7 @@ from syntax.engine import SyntaxHighlighter
 from syntax import SYNTAX_MAP
 import argparse
 
+#### ADD THIS TO TETST GIT OUT
 parser = argparse.ArgumentParser(
     prog="tinyt",
     description="Tinyt — a lightweight terminal text editor",
@@ -483,7 +484,7 @@ def editior(stdscr, filename):
 
         #FIND
         if mode == "find":
-            ####WORKING
+            ####WORKING THIS IS AFTER COMMIT
         #yanked
         if yanked:
             y = height - 2
