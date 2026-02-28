@@ -7,6 +7,11 @@ CURRENT-------------------
 
 - page up go up half a page
 
+f key=lastkey:
+    select_on = false (needs to be a new var not last key because of -1)
+
+
+
 MAJOR---------------------
 - redesign  actions to be built from parts
     - selection (sel,block,word, etc)
@@ -67,7 +72,7 @@ Extras:
 - crashing when autoComp is out of bounds
 - added non case sensitive autoComp
 - selecting
-
+- half scrolling for pgup/pgdn
 
 
 

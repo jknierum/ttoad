@@ -728,6 +728,16 @@ def editior(stdscr, filename):
                 cursor_y = cursor_y
                 cursor_x = end
 
+            #a: All
+            elif key == 97:
+                save_undo_state(undo_stack, text, cursor_x, cursor_y)
+                redo_stack.clear()
+
+                select_mode = True
+                select_start_y = 0
+                select_start_x = 0
+                cursor_y = len(text) - 1
+                cursor_x = len(text[cursor_y])
 
 
 
@@ -942,21 +952,21 @@ def editior(stdscr, filename):
             )
             status_message = "Redo"
             status_time = time.time()
-
+        #PGUP / PGDN
         elif key == 339: #pg up
-            if cursor_y == scroll_pos_y:
-                cursor_y = max(0, cursor_y - height)
-                scroll_pos_y = cursor_y
-            else:
-                cursor_y = scroll_pos_y
+            half = height // 2
+
+            scroll_pos_y = max(0, scroll_pos_y - half)
+
+            cursor_y = max(
+                scroll_pos_y,
+                min(cursor_y - half, scroll_pos_y + height - 1)
+            )
+
         elif key == 338: #pgdn
-            vh = visible_height - 1
-            cursor_y = min(len(text) - 1, cursor_y + vh)
-
-            if cursor_y >= scroll_pos_y + vh:
-                scroll_pos_y = cursor_y - vh
-
-            scroll_pos_y = max(0, min(scroll_pos_y, len(text) - vh))
+            half = height // 2
+            scroll_pos_y = min(len(text) - height, scroll_pos_y + half)
+            cursor_y = min(len(text) - 1, cursor_y + half)
 
         #SAVE
         elif key == 19: #ctrl + s
