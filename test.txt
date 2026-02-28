@@ -1,25 +1,26 @@
---TO DO--
-!! cant scroll to the edge of the doc (right)
+----------TO DO-----------
+CURRENT-------------------
+- adding sel all
+- delete sel
+- tab sel
+- comment sel
 
-- home should bring to the frount of the text in line
-- selecting
-- auto both (), "", {}. [], ''
+- page up go up half a page
 
-redesign  actions to be built from parts
+MAJOR---------------------
+- redesign  actions to be built from parts
     - selection (sel,block,word, etc)
     - repeats (number)
     - Action (delete, copy, jump)
 
     b12d = delete the next 12 blocks
     b-12d = delete the last 12 blocks
+- find
 
-
-
-
-
-
-
-
+MINOR---------------------
+- home should bring to the frount of the text in line
+- auto both (), "", {}. [], ''
+- cant scroll to the edge of the doc (right)
 
 
 
@@ -37,7 +38,7 @@ redesign  actions to be built from parts
         move Tinty to back: ctrl + z (fg to bring back to front)
 
     action types: used for text manipulation
-        modifiers
+        locators
             l(line)
             b(block)
             w(word)
@@ -59,3 +60,17 @@ redesign  actions to be built from parts
 Extras:
     auto saves
     have actions that stack
+
+
+----------DONE------------
+- fixed it so auto complete only aqpears when typing
+- crashing when autoComp is out of bounds
+- added non case sensitive autoComp
+- selecting
+
+
+
+
+
+
+
