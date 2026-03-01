@@ -2,13 +2,13 @@ import curses
 import sys
 import time
 import os
+from datetime import datetime
 import signal
 import os
 import subprocess
-import argparse
 from syntax.engine import SyntaxHighlighter
 from syntax import SYNTAX_MAP
-from datetime import datetime
+import argparse
 
 parser = argparse.ArgumentParser(
     prog="tinyt",
@@ -504,7 +504,7 @@ def editior(stdscr, filename):
 
         # Draw the line
             visible_line = line[scroll_pos_x:scroll_pos_x + visible_width]
-#            highlighter.highlight_line(stdscr, i + top_margin, left_margin, visible_line)
+            highlighter.highlight_line(stdscr, i + top_margin, left_margin, visible_line)
             screen_line_y = i + scroll_pos_y
 
             for j, ch in enumerate(visible_line):
@@ -521,8 +521,8 @@ def editior(stdscr, filename):
                     select_start_x
                 ):
                     stdscr.addstr(screen_y, screen_x, ch, curses.A_REVERSE)
-                else:
-                    stdscr.addstr(screen_y, screen_x, ch)
+
+
 
 
 
@@ -551,7 +551,7 @@ def editior(stdscr, filename):
         #MODE DISPLAY
         mode_dis = mode.upper()
         stdscr.addstr(height - 2, left_margin, " " + mode_dis + " ", curses.color_pair(5) | curses.A_REVERSE | curses.A_BOLD)
-        
+
         #YANKED
         if yanked:
             first_line = yanked.split("\n", 1)[0]
