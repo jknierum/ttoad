@@ -218,17 +218,17 @@ def can_autocomplete(text, cursor_y, cursor_x, mode, nav_key_last, prefix = ""):
     if not prefix:
         return False
     # Case 1: Cursor at end of line
-    if cursor_x == len(line):
-        return True
+    #if cursor_x == len(line):
+    #    return True
 
     # Case 2: Character after cursor is space
-    if line[cursor_x] == " ":
-        return True
+#    if line[cursor_x] == " ":
+#        return True
 
-    if line[cursor_x] in "(){}[]":
-        return True
+    #if line[cursor_x] in "(){}[] ":
+    #   return True
 
-    return False
+    return True
 
 def get_indent_level(line):
     #"""Return number of leading spaces"""
@@ -454,9 +454,49 @@ def unindent_selection(text, select_start_y, cursor_y, tab="    "):
         if text[i].startswith(tab):
             text[i] = text[i][len(tab):]
 
+def find_all(text, word):
+    results = []
+
+    if not word:
+        return results
+
+    word_len = len(word)
+
+    for y, line in enumerate(text):
+        x = 0
+
+        while True:
+            x = line.find(word, x)
+
+            if x == -1:
+                break
+
+            start_y = y
+            start_x = x
+            end_y = y
+            end_x = x + word_len
+
+            results.append((start_y, start_x, end_y, end_x))
+
+            x += word_len  # move forward to avoid infinite loop
+
+    return results
+
+def next_match(matches, cursor_y, cursor_x):
+    if not matches:
+        return cursor_y, cursor_x
+
+    # find first match after cursor
+    for start_y, start_x, end_y, end_x in matches:
+        if (start_y, start_x) > (cursor_y, cursor_x):
+            return start_y, start_x
+
+    # wrap around to first match
+    return matches[0][0], matches[0][1]
+
 
 def editior(stdscr, filename):
-    stdscr.timeout(50)  # refresh every 50ms
+#    stdscr.timeout(50)  # refresh every 50ms
     curses.set_escdelay(1)
     status_message = ""
     status_time = 0
@@ -514,6 +554,12 @@ def editior(stdscr, filename):
     tm_colour = 1
     saved_text_for_check = text.copy()
 
+    find_query = ""
+    find_y = 0
+    find_x = 0
+    query = ""
+
+
     def get_tab_level(line, tab_size=4):
         count = 0
 
@@ -553,18 +599,18 @@ def editior(stdscr, filename):
 
         #TIME
 
-        y = 1
-        x = width - left_margin - len(str(current_time))
-
-        x = max(0, x)
-
-        stdscr.addstr(
-            y,
-            x,
-            current_time[:width - x - 1],
-            curses.color_pair(1)
-        )
-
+#        y = 1
+#        x = width - left_margin - len(str(current_time))
+#
+#        x = max(0, x)
+#
+#        stdscr.addstr(
+#            y,
+#            x,
+#            current_time[:width - x - 1],
+#            curses.color_pair(1)
+#        )
+#
         # Draw text
         height, width = stdscr.getmaxyx()
         visible_height = height - (top_margin * 2)  # number of lines we can display
@@ -665,11 +711,11 @@ def editior(stdscr, filename):
                 suggestion_on = True
                 for i in range(min(suggestions_shown, len(suggestion_list))):
                     if i == suggestion_sel:
-                        safe_addstr(stdscr, cursor_y + top_margin + i + 1, (cursor_x - scroll_pos_x) + left_margin - len(prefix), suggestion_list[i], curses.color_pair(5) | curses.A_REVERSE)
+                        safe_addstr(stdscr, cursor_y - scroll_pos_y + top_margin + i + 1, (cursor_x - scroll_pos_x) + left_margin - len(prefix), suggestion_list[i], curses.color_pair(5) | curses.A_REVERSE)
                     else:
-                        safe_addstr(stdscr, cursor_y + top_margin + i + 1, (cursor_x - scroll_pos_x) + left_margin - len(prefix), suggestion_list[i], curses.color_pair(1) | curses.A_REVERSE)
+                        safe_addstr(stdscr, cursor_y - scroll_pos_y + top_margin + i + 1, (cursor_x - scroll_pos_x) + left_margin - len(prefix), suggestion_list[i], curses.color_pair(1) | curses.A_REVERSE)
 
-                    safe_addstr(stdscr, screen_y + top_margin, (cursor_x - scroll_pos_x) + left_margin, suggestion_list[suggestion_sel][len(prefix):], curses.color_pair(1))
+                    safe_addstr(stdscr, cursor_y - scroll_pos_y + top_margin, (cursor_x - scroll_pos_x) + left_margin, suggestion_list[suggestion_sel][len(prefix):], curses.color_pair(1))
             else:
                 suggestion_on = False
                 suggestion_sel = 0
@@ -702,7 +748,37 @@ def editior(stdscr, filename):
                 cursor_x += 1
                 select_mode = False
 
-     # NORMAL MODE
+    #FIND MODE
+        elif mode == "find":
+            if select_mode:
+                selected = get_selected_text(
+                            text,
+                            select_start_y,
+                            select_start_x,
+                            cursor_y,
+                            cursor_x
+                        )
+                query = selected
+                select_mode = False
+            
+            if not query:
+                mode = "normal"
+            else:
+                matches = find_all(text, query)
+
+            if key == 102:
+                cursor_y, cursor_x = next_match(matches, cursor_y, cursor_x)
+                scroll_pos_y = cursor_y - int(visible_height / 2)
+                if scroll_pos_y > len(text):
+                    scroll_pos_y = cursor_y
+                elif scroll_pos_y < 0:
+                    scroll_pos_y = cursor_y
+                
+                scroll_pos_x =  0
+
+
+
+    # NORMAL MODE
         elif mode == "normal":
             #ESC
             if key == 31 or key == 105:
@@ -724,7 +800,7 @@ def editior(stdscr, filename):
                     select_mode = False
 
 
-#ACTIONS (delete(d), copy(c)/yank(y), paste(p), paste over line(P), cut(x), jump forword(j), jump back(J), comment(/), tab(t), unTab(T))
+    #ACTIONS (delete(d), copy(c)/yank(y), paste(p), paste over line(P), cut(x), jump forword(j), jump back(J), comment(/), tab(t), unTab(T))
 
 
             #p,P: Paste
@@ -816,6 +892,12 @@ def editior(stdscr, filename):
                 select_start_x = 0
                 cursor_y = len(text) - 1
                 cursor_x = len(text[cursor_y])
+
+            #FIND
+            elif key == 102:
+                mode = "find"
+
+
 
     # ANY MODE
         if key == 27: # ESC
@@ -1114,7 +1196,6 @@ def editior(stdscr, filename):
                 select_mode = True
                 select_start_y = cursor_y
                 select_start_x = cursor_x
-
 
         #QUIT
         elif key == 17: #ctrl + q

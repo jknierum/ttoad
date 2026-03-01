@@ -1,5 +1,6 @@
 ----------TO DO-----------
 CURRENT-------------------
+- block sel needs fixing
 - Find action
 - when selecting keep cursor in place and revert select by re keying
 f key=lastkey:
@@ -56,7 +57,7 @@ MINOR---------------------
             comment(/)
             tab(t)
             unTab(T)
-
+            find sel word(f)
 Extras:
     auto saves
     have actions that stack
@@ -67,6 +68,8 @@ Extras:
 - tab select
 - comment select
 - delete select
+- removed update every 50ms to save cpu
+- find sel word(f)
 
 
 
