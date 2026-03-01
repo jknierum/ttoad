@@ -2,13 +2,13 @@ import curses
 import sys
 import time
 import os
-from datetime import datetime
 import signal
 import os
 import subprocess
+import argparse
 from syntax.engine import SyntaxHighlighter
 from syntax import SYNTAX_MAP
-import argparse
+from datetime import datetime
 
 #### ADD THIS TO TETST GIT OUT
 parser = argparse.ArgumentParser(
@@ -135,9 +135,11 @@ def delete_current_word(text, cursor_y, cursor_x):
 
 def get_current_word(text, cursor_y, cursor_x):
     line = text[cursor_y]
+    start = cursor_x
+    end = cursor_x
 
     if not line:
-        return ""
+        return start, end
 
     # If cursor is at end of line, step back one
     if cursor_x == len(line) and cursor_x > 0:
@@ -145,7 +147,7 @@ def get_current_word(text, cursor_y, cursor_x):
 
     # If not on a word character, return empty
     if not (line[cursor_x].isalnum() or line[cursor_x] == "_"):
-        return ""
+        return start, end
 
     # Find word start
     start = cursor_x
@@ -157,7 +159,7 @@ def get_current_word(text, cursor_y, cursor_x):
     while end < len(line) and (line[end].isalnum() or line[end] == "_"):
         end += 1
 
-    return line[start:end]
+    return start, end
 
 def get_current_prefix(text, cursor_y, cursor_x):
     line = text[cursor_y]
@@ -194,21 +196,24 @@ def collect_words(text):
     return words
 
 def get_autocomplete_list(prefix, words):
-    return sorted([w for w in words if w.startswith(prefix) and w != prefix])
+    return sorted([w for w in words if w.lower().startswith(prefix.lower()) and w.lower() != prefix.lower()])
+
 
 def apply_autocomplete(text, cursor_y, cursor_x, suggestion, prefix):
     line = text[cursor_y]
     remainder = suggestion[len(prefix):]
 
     text[cursor_y] = (
-        line[:cursor_x] + remainder + line[cursor_x:]
+        line[:cursor_x - len(prefix)] + suggestion + line[cursor_x:]
     )
 
     return cursor_x + len(remainder)
 
-def can_autocomplete(text, cursor_y, cursor_x, mode, key, prefix = ""):
+def can_autocomplete(text, cursor_y, cursor_x, mode, nav_key_last, prefix = ""):
     line = text[cursor_y]
     if not mode == "insert":
+        return False
+    if nav_key_last:
         return False
 
     if not prefix:
@@ -338,6 +343,47 @@ def copy_to_clipboard(text):
     except Exception as e:
         pass
 
+
+def safe_addstr(stdscr, y, x, string, attr=0):
+    height, width = stdscr.getmaxyx()
+
+    if y < 0 or y >= height or x < 0 or x >= width:
+        return
+
+    stdscr.addstr(y, x, string[:width - x], attr)
+
+def is_selected(y, x, cursor_y, cursor_x, start_y, start_x):
+    if (y, x) < (start_y, start_x):
+        start_y, start_x, cursor_y, cursor_x = cursor_y, cursor_x, start_y, start_x
+
+    return (y, x) >= (start_y, start_x) and (y, x) < (cursor_y, cursor_x)
+
+def get_selected_text(text, start_y, start_x, end_y, end_x):
+
+    if (start_y, start_x) > (end_y, end_x):
+        start_y, start_x, end_y, end_x = end_y, end_x, start_y, start_x
+
+    result = []
+
+    for y in range(start_y, end_y + 1):
+
+        line = text[y]
+
+        if y == start_y and y == end_y:
+            result.append(line[start_x:end_x])
+
+        elif y == start_y:
+            result.append(line[start_x:])
+
+        elif y == end_y:
+            result.append(line[:end_x])
+
+        else:
+            result.append(line)
+
+    return "\n".join(result)
+
+
 def editior(stdscr, filename):
     stdscr.timeout(50)  # refresh every 50ms
     curses.set_escdelay(1)
@@ -368,10 +414,15 @@ def editior(stdscr, filename):
 
     cursor_y = 0
     cursor_x =0
+
+    select_mode = False
+    select_start_y = 0
+    select_start_x = 0
+
     tab_size = 4
     left_margin = 6
     top_margin = 3
-    mode = "find" #"normal"
+    mode = "normal"
     yanked = ""
     last_key = -1
     last_key_time = 0
@@ -383,6 +434,7 @@ def editior(stdscr, filename):
     suggestion_on = False
     comment_cha = "#"
     find_string = ""
+    nav_key_last = False
 
     scroll_pos_y = 0
     scroll_pos_x = 0
@@ -453,7 +505,27 @@ def editior(stdscr, filename):
 
         # Draw the line
             visible_line = line[scroll_pos_x:scroll_pos_x + visible_width]
-            highlighter.highlight_line(stdscr, i + top_margin, left_margin, visible_line)
+#            highlighter.highlight_line(stdscr, i + top_margin, left_margin, visible_line)
+            screen_line_y = i + scroll_pos_y
+
+            for j, ch in enumerate(visible_line):
+
+                screen_x = j + left_margin
+                screen_y = i + top_margin
+
+                if select_mode and is_selected(
+                    screen_line_y,
+                    j + scroll_pos_x,
+                    cursor_y,
+                    cursor_x,
+                    select_start_y,
+                    select_start_x
+                ):
+                    stdscr.addstr(screen_y, screen_x, ch, curses.A_REVERSE)
+                else:
+                    stdscr.addstr(screen_y, screen_x, ch)
+
+
 
         # Draw line numbers
             line_count = str(i + 1)
@@ -462,13 +534,13 @@ def editior(stdscr, filename):
 
             num_style = "normal"
             if num_style == "normal":
-                if i == screen_y:
+                if i == cursor_y - scroll_pos_y:
                     stdscr.addstr(i + top_margin, 0, str(int(line_count) + scroll_pos_y).rjust(line_num_width +1), curses.color_pair(5) | curses.A_REVERSE | curses.A_BOLD)
                 else:
                     stdscr.addstr(i + top_margin, 0, str(int(line_count) + scroll_pos_y).rjust(line_num_width), curses.color_pair(1))
 
             elif num_style == "vim":
-                if i == screen_y:
+                if i == cursor_y - scroll_pos_y:
                     stdscr.addstr(i + top_margin, 0, str(int(line_count) + scroll_pos_y).rjust(line_num_width +1), curses.color_pair(5) | curses.A_REVERSE | curses.A_BOLD)
                 elif i > screen_y:
                     stdscr.addstr(i + top_margin, 0, str(int(line_count) + scroll_pos_y - cursor_y - 1).rjust(line_num_width), curses.color_pair(1))
@@ -477,27 +549,36 @@ def editior(stdscr, filename):
 
 
 
-
+        #MODE DISPLAY
         mode_dis = mode.upper()
         stdscr.addstr(height - 2, left_margin, " " + mode_dis + " ", curses.color_pair(5) | curses.A_REVERSE | curses.A_BOLD)
 
 
+<<<<<<< HEAD
         #FIND
         if mode == "find":
             ####WORKING THIS IS AFTER COMMIT
         #yanked
+=======
+        #YANKED
+>>>>>>> tmp
         if yanked:
+            first_line = yanked.split("\n", 1)[0]
+
             y = height - 2
-            x = width - len(yanked) - 1
+            x = width - len(first_line) - 1
+            max_len = width - x - 1
+            if len(first_line) > max_len:
+                first_line = first_line[:max_len - 3] + "..."
 
-            x = max(0, x)
-
-            stdscr.addstr(
+            safe_addstr(
+                stdscr,
                 y,
                 x,
-                yanked[:width - x - 1],
+                first_line,
                 curses.color_pair(1)
             )
+
 #        if last_key:
 #           stdscr.addstr(height - 2, width - left_margin, str(last_key), curses.color_pair(1))
 
@@ -513,21 +594,21 @@ def editior(stdscr, filename):
         else:
             suggestion_sel = 0
 
-        if prefix and can_autocomplete(text, cursor_y, cursor_x, mode, key, prefix) and mode == "insert":
+        if prefix and can_autocomplete(text, cursor_y, cursor_x, mode, nav_key_last, prefix) and mode == "insert":
             if suggestion_list:
                 suggestion = suggestion_list[suggestion_sel]
 
-        if prefix and can_autocomplete(text, cursor_y, cursor_x, mode, key, prefix) and mode == "insert":
+        if prefix and can_autocomplete(text, cursor_y, cursor_x, mode, nav_key_last, prefix) and mode == "insert":
             if suggestion_list:
                 suggestion = suggestion_list[suggestion_sel]
                 suggestion_on = True
                 for i in range(min(suggestions_shown, len(suggestion_list))):
                     if i == suggestion_sel:
-                        stdscr.addstr(screen_y + top_margin + i + 1, (cursor_x - scroll_pos_x) + left_margin - len(prefix), suggestion_list[i], curses.color_pair(5) | curses.A_REVERSE)
+                        safe_addstr(stdscr, screen_y + top_margin + i + 1, (cursor_x - scroll_pos_x) + left_margin - len(prefix), suggestion_list[i], curses.color_pair(5) | curses.A_REVERSE)
                     else:
-                        stdscr.addstr(screen_y + top_margin + i + 1, (cursor_x - scroll_pos_x) + left_margin - len(prefix), suggestion_list[i], curses.color_pair(1) | curses.A_REVERSE)
+                        safe_addstr(stdscr, screen_y + top_margin + i + 1, (cursor_x - scroll_pos_x) + left_margin - len(prefix), suggestion_list[i], curses.color_pair(1) | curses.A_REVERSE)
 
-                    stdscr.addstr(screen_y + top_margin, (cursor_x - scroll_pos_x) + left_margin, suggestion_list[suggestion_sel][len(prefix):], curses.color_pair(1))
+                    safe_addstr(stdscr, screen_y + top_margin, (cursor_x - scroll_pos_x) + left_margin, suggestion_list[suggestion_sel][len(prefix):], curses.color_pair(1))
             else:
                 suggestion_on = False
                 suggestion_sel = 0
@@ -569,15 +650,22 @@ def editior(stdscr, filename):
                 mode = "insert"
             #y,Y
             elif key == 121: #y: yank word
-                yanked = get_current_word(text, cursor_y, cursor_x)
-                copy_to_clipboard(yanked)
-#                status_message = "Copied to clipboard"
 
-            elif key == 89: #Y: Yank line
-                yanked = text[cursor_y]
-                copy_to_clipboard(yanked)
-#                status_message = "Copied to clipboard"
-            #p,P
+                if select_mode:
+                    selected = get_selected_text(
+                        text,
+                        select_start_y,
+                        select_start_x,
+                        cursor_y,
+                        cursor_x
+                    )
+                    yanked = selected
+                    copy_to_clipboard(selected)
+
+#ACTIONS (delete(d), copy(c)/yank(y), paste(p), paste over line(P), cut(x), jump forword(j), jump back(J), comment(/), tab(t), unTab(T))
+
+
+            #p,P: Paste
             elif key == 112: #p: paste at cursor
                 save_undo_state(undo_stack, text, cursor_x, cursor_y)
                 redo_stack.clear()
@@ -591,56 +679,90 @@ def editior(stdscr, filename):
                 paste = paste_from_clipboard()
                 cursor_y, cursor_x = insert_paste(text, cursor_y, cursor_x, paste)
 
-            #l: line
+
+#LOCATORS
+            #l: line select
             elif key == 108:
                 save_undo_state(undo_stack, text, cursor_x, cursor_y)
                 redo_stack.clear()
                 line = text[cursor_y]
-                if last_key == 100: #d
-                    del text[cursor_y]
-                elif last_key == 47:
-                    if line:
-                        if not line[0] == comment_cha:
-                            text[cursor_y] = comment_cha + line
-                        else:
-                           text[cursor_y] = text[cursor_y].lstrip(comment_cha)
-                    else:
-                        text[cursor_y] = comment_cha + line
 
+                select_mode = True
+                select_start_y = cursor_y
+                select_start_x = 0
+                cursor_x = len(line)
 
-            #b: block
+            #b: block select
             elif key == 98:
                 save_undo_state(undo_stack, text, cursor_x, cursor_y)
                 redo_stack.clear()
                 line = text[cursor_y]
-                if last_key == 100: #db: delete block
-                    start, end = check_for_block(text, cursor_y)
-                    del text[start:end+1]
-                    cursor_y = start
-                    cursor_x = 0
-                if last_key == 47: #/l: comment block
-                    if line[0] == comment_cha:
-                        start, end = check_for_block(text, cursor_y)
-                        for i in range(start, end + 1):
-                            text[i] = text[i].lstrip(comment_cha)
-                    else:
-                        start, end = check_for_block(text, cursor_y)
-                        for i in range(start, end + 1):
-                            text[i] = comment_cha + text[i]
+
+                select_mode = True
+
+                start, end = check_for_block(text, cursor_y)
+                select_start_y = start
+                select_start_x = 0
+                cursor_y = end
+                cursor_x = len(text[end])
+
+
+
+
+#                if last_key == 100: #db: delete block
+#                    start, end = check_for_block(text, cursor_y)
+#                    del text[start:end+1]
+#                    cursor_y = start
+#                    cursor_x = 0
+#                if last_key == 47: #/l: comment block
+#                    if line[0] == comment_cha:
+#                        start, end = check_for_block(text, cursor_y)
+#                        for i in range(start, end + 1):
+#                            text[i] = text[i].lstrip(comment_cha)
+#                    else:
+#                        start, end = check_for_block(text, cursor_y)
+#                        for i in range(start, end + 1):
+#                            text[i] = comment_cha + text[i]
 
             #w: word
             elif key == 119:
                 save_undo_state(undo_stack, text, cursor_x, cursor_y)
                 redo_stack.clear()
-                if last_key == 100: #dw: delete word
-                    cursor_x = delete_current_word(text, cursor_y, cursor_x)
-                    clear_last_key = True
+
+                select_mode = True
+                start, end = get_current_word(text, cursor_y, cursor_x)
+                select_start_y = cursor_y
+                select_start_x = start
+                cursor_y = cursor_y
+                cursor_x = end
+
+            #a: All
+            elif key == 97:
+                save_undo_state(undo_stack, text, cursor_x, cursor_y)
+                redo_stack.clear()
+
+                select_mode = True
+                select_start_y = 0
+                select_start_x = 0
+                cursor_y = len(text) - 1
+                cursor_x = len(text[cursor_y])
+
+
+
+
+
+
+
+#                if last_key == 100: #dw: delete word
+#                    cursor_x = delete_current_word(text, cursor_y, cursor_x)
+#                    clear_last_key = True
             #s (select): word,line,block
             #elif key ==
 
     # ANY MODE
         if key == 27: # ESC
             mode = "normal"
+            select_mode = False
 
         elif key == curses.KEY_BACKSPACE or key == 127:
             save_undo_state(undo_stack, text, cursor_x, cursor_y)
@@ -838,21 +960,21 @@ def editior(stdscr, filename):
             )
             status_message = "Redo"
             status_time = time.time()
-
+        #PGUP / PGDN
         elif key == 339: #pg up
-            if cursor_y == scroll_pos_y:
-                cursor_y = max(0, cursor_y - height)
-                scroll_pos_y = cursor_y
-            else:
-                cursor_y = scroll_pos_y
+            half = height // 2
+
+            scroll_pos_y = max(0, scroll_pos_y - half)
+
+            cursor_y = max(
+                scroll_pos_y,
+                min(cursor_y - half, scroll_pos_y + height - 1)
+            )
+
         elif key == 338: #pgdn
-            vh = visible_height - 1
-            cursor_y = min(len(text) - 1, cursor_y + vh)
-
-            if cursor_y >= scroll_pos_y + vh:
-                scroll_pos_y = cursor_y - vh
-
-            scroll_pos_y = max(0, min(scroll_pos_y, len(text) - vh))
+            half = height // 2
+            scroll_pos_y = min(len(text) - height, scroll_pos_y + half)
+            cursor_y = min(len(text) - 1, cursor_y + half)
 
         #SAVE
         elif key == 19: #ctrl + s
@@ -870,6 +992,23 @@ def editior(stdscr, filename):
 
                 paste = paste_from_clipboard()
                 cursor_y, cursor_x = insert_paste(text, cursor_y, cursor_x, paste)
+        #COPY
+        elif key == 3:  # Ctrl+C
+            if select_mode:
+                selected = get_selected_text(
+                    text,
+                    select_start_y,
+                    select_start_x,
+                    cursor_y,
+                    cursor_x
+                )
+                copy_to_clipboard(selected)
+
+        #SELECT
+        elif key == 0:  # Ctrl+Space
+            select_mode = True
+            select_start_y = cursor_y
+            select_start_x = cursor_x
 
         #QUIT
         elif key == 17: #ctrl + q
@@ -894,6 +1033,24 @@ def editior(stdscr, filename):
             else:
                 last_key = key
                 last_key_time = current_time
+
+        #Was last not -1 key an arrow?
+            NAV_KEYS = {
+                curses.KEY_UP,
+                curses.KEY_DOWN,
+                curses.KEY_LEFT,
+                curses.KEY_RIGHT,
+                curses.KEY_HOME,
+                curses.KEY_END,
+                curses.KEY_NPAGE,
+                curses.KEY_PPAGE
+            }
+
+            if key in NAV_KEYS and not can_autocomplete(text, cursor_y, cursor_x, mode, nav_key_last, prefix):
+                nav_key_last  = True
+            else:
+                nav_key_last = False
+
 
         # Ensure text is never empty
         if not text:
