@@ -1,11 +1,6 @@
 ----------TO DO-----------
 CURRENT-------------------
-- adding sel all
-- delete sel
-- tab sel
-- comment sel
-
-- page up go up half a page
+- Find action
 
 f key=lastkey:
     select_on = false (needs to be a new var not last key because of -1)
@@ -68,11 +63,22 @@ Extras:
 
 
 ----------DONE------------
+- when backspace to prev line the cursor jumps to end of line
+- tab select
+- comment select
+- delete select
+
+
+
+--------PREVIOUS----------
+
 - fixed it so auto complete only aqpears when typing
 - crashing when autoComp is out of bounds
 - added non case sensitive autoComp
 - selecting
 - half scrolling for pgup/pgdn
+- fixed page up and down
+
 
 
 

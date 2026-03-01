@@ -382,6 +382,78 @@ def get_selected_text(text, start_y, start_x, end_y, end_x):
 
     return "\n".join(result)
 
+def delete_selection(text, select_start_y, select_start_x, cursor_y, cursor_x):
+
+    # 1. Normalize order
+    if (cursor_y, cursor_x) < (select_start_y, select_start_x):
+        start_y, start_x = cursor_y, cursor_x
+        end_y, end_x = select_start_y, select_start_x
+    else:
+        start_y, start_x = select_start_y, select_start_x
+        end_y, end_x = cursor_y, cursor_x
+
+    # 2. Same line
+    if start_y == end_y:
+        line = text[start_y]
+        new_line = line[:start_x] + line[end_x:]
+
+        if new_line == "":
+            del text[start_y]
+            start_y = max(0, start_y - 1)
+            start_x = 0
+        else:
+            text[start_y] = new_line
+
+    # 3. Multi-line
+    else:
+        first_part = text[start_y][:start_x]
+        last_part = text[end_y][end_x:]
+
+        merged = first_part + last_part
+
+        # Delete all affected lines first
+        del text[start_y:end_y + 1]
+
+        # Only insert merged line if not empty
+        if merged.strip() != "":
+            text.insert(start_y, merged)
+        else:
+            start_y = max(0, start_y - 1)
+
+        start_x = 0
+
+    # 4. Ensure file always has at least one line
+    if len(text) == 0:
+        text.append("")
+        start_y = 0
+        start_x = 0
+
+    return start_y, start_x
+
+
+
+def indent_selection(text, select_start_y, cursor_y, tab="    "):
+
+    # Normalize order
+    start_y = min(select_start_y, cursor_y)
+    end_y = max(select_start_y, cursor_y)
+
+    # Indent each line
+    for i in range(start_y, end_y + 1):
+        text[i] = tab + text[i]
+
+    # Move cursor to stay visually correct
+    return start_y, end_y
+
+def unindent_selection(text, select_start_y, cursor_y, tab="    "):
+
+    start_y = min(select_start_y, cursor_y)
+    end_y = max(select_start_y, cursor_y)
+
+    for i in range(start_y, end_y + 1):
+        if text[i].startswith(tab):
+            text[i] = text[i][len(tab):]
+
 
 def editior(stdscr, filename):
     stdscr.timeout(50)  # refresh every 50ms
@@ -570,8 +642,6 @@ def editior(stdscr, filename):
                 curses.color_pair(1)
             )
 
-#        if last_key:
-#           stdscr.addstr(height - 2, width - left_margin, str(last_key), curses.color_pair(1))
 
         #Auto complete
         prefix = get_current_prefix(text, cursor_y, cursor_x)
@@ -585,11 +655,11 @@ def editior(stdscr, filename):
         else:
             suggestion_sel = 0
 
-        if prefix and can_autocomplete(text, cursor_y, cursor_x, mode, nav_key_last, prefix) and mode == "insert":
+        if prefix and can_autocomplete(text, cursor_y - scroll_pos_y, cursor_x, mode, nav_key_last, prefix) and mode == "insert":
             if suggestion_list:
                 suggestion = suggestion_list[suggestion_sel]
 
-        if prefix and can_autocomplete(text, cursor_y, cursor_x, mode, nav_key_last, prefix) and mode == "insert":
+        if prefix and can_autocomplete(text, cursor_y - scroll_pos_y, cursor_x, mode, nav_key_last, prefix) and mode == "insert":
             if suggestion_list:
                 suggestion = suggestion_list[suggestion_sel]
                 suggestion_on = True
@@ -630,15 +700,14 @@ def editior(stdscr, filename):
                 line = text[cursor_y]
                 text[cursor_y] = line[:cursor_x] + chr(key) + line[cursor_x:]
                 cursor_x += 1
-    # FIND MODE
-        elif mode == "find":
-           if 32 <= key <= 126:
-                find_string = find_string + chr(key)
-    # NORMAL MODE
+                select_mode = False
+
+     # NORMAL MODE
         elif mode == "normal":
             #ESC
             if key == 31 or key == 105:
                 mode = "insert"
+                select_mode = False
             #y,Y
             elif key == 121: #y: yank word
 
@@ -652,6 +721,8 @@ def editior(stdscr, filename):
                     )
                     yanked = selected
                     copy_to_clipboard(selected)
+                    select_mode = False
+
 
 #ACTIONS (delete(d), copy(c)/yank(y), paste(p), paste over line(P), cut(x), jump forword(j), jump back(J), comment(/), tab(t), unTab(T))
 
@@ -663,13 +734,14 @@ def editior(stdscr, filename):
 
                 paste = paste_from_clipboard()
                 cursor_y, cursor_x = insert_paste(text, cursor_y, cursor_x, paste)
+                select_mode = False
+
             elif key == 80: #P: Paste whole line
                 save_undo_state(undo_stack, text, cursor_x, cursor_y)
                 redo_stack.clear()
-                text[cursor_y] = ""
                 paste = paste_from_clipboard()
                 cursor_y, cursor_x = insert_paste(text, cursor_y, cursor_x, paste)
-
+                select_mode = False
 
 #LOCATORS
             #l: line select
@@ -698,22 +770,29 @@ def editior(stdscr, filename):
                 cursor_x = len(text[end])
 
 
+            #d: delete
+            elif key == 100:
+                if select_mode:
+                    cursor_y, cursor_x = delete_selection(
+                        text,
+                        select_start_y,
+                        select_start_x,
+                        cursor_y,
+                        cursor_x
+                    )
 
+                select_mode = False
 
-#                if last_key == 100: #db: delete block
-#                    start, end = check_for_block(text, cursor_y)
-#                    del text[start:end+1]
-#                    cursor_y = start
-#                    cursor_x = 0
-#                if last_key == 47: #/l: comment block
-#                    if line[0] == comment_cha:
-#                        start, end = check_for_block(text, cursor_y)
-#                        for i in range(start, end + 1):
-#                            text[i] = text[i].lstrip(comment_cha)
-#                    else:
-#                        start, end = check_for_block(text, cursor_y)
-#                        for i in range(start, end + 1):
-#                            text[i] = comment_cha + text[i]
+            elif key == 47: #: comment block
+                if select_mode:
+                    line = text[cursor_y]
+                    if line.startswith(comment_cha):
+                        for i in range(select_start_y , cursor_y + 1):
+                            text[i] = text[i].lstrip(comment_cha)
+                    else:
+                        for i in range(select_start_y , cursor_y + 1):
+                            text[i] = comment_cha + text[i]
+                    select_mode = False
 
             #w: word
             elif key == 119:
@@ -738,57 +817,72 @@ def editior(stdscr, filename):
                 cursor_y = len(text) - 1
                 cursor_x = len(text[cursor_y])
 
-
-
-
-
-
-
-#                if last_key == 100: #dw: delete word
-#                    cursor_x = delete_current_word(text, cursor_y, cursor_x)
-#                    clear_last_key = True
-            #s (select): word,line,block
-            #elif key ==
-
     # ANY MODE
         if key == 27: # ESC
             mode = "normal"
             select_mode = False
-
+    #BACKSPACE
         elif key == curses.KEY_BACKSPACE or key == 127:
             save_undo_state(undo_stack, text, cursor_x, cursor_y)
             redo_stack.clear()
-            if cursor_x > 0:
-                line = text[cursor_y]
-                tab = get_tab_level(line)
-                indent_width = len(line) - len(line.lstrip(" "))
-                spaces_to_remove = 0
 
-                if indent_width >= tab_size and cursor_x <= indent_width:
-                    # remove one indentation level
-                    text[cursor_y] = line[tab_size:]
-                    cursor_x = max(0, cursor_x - tab_size)
-                else:
-                    text[cursor_y] = line[:cursor_x-1] + line[cursor_x:]
-                    cursor_x -= 1
+            if select_mode:
+                cursor_y, cursor_x = delete_selection(
+                    text,
+                    select_start_y,
+                    select_start_x,
+                    cursor_y,
+                    cursor_x
+                )
 
-            elif cursor_y > 0: #Move back to previous line and delete
-                text[cursor_y - 1] += text[cursor_y]
-                del text[cursor_y]
-                cursor_y -= 1
-                cursor_x = len(text[cursor_y])
+                select_mode = False
+
+
+            else:
+                if cursor_x > 0:
+                    line = text[cursor_y]
+                    tab = get_tab_level(line)
+                    indent_width = len(line) - len(line.lstrip(" "))
+                    spaces_to_remove = 0
+
+                    if indent_width >= tab_size and cursor_x <= indent_width:
+                        # remove one indentation level
+                        text[cursor_y] = line[tab_size:]
+                        cursor_x = max(0, cursor_x - tab_size)
+                    else:
+                        text[cursor_y] = line[:cursor_x-1] + line[cursor_x:]
+                        cursor_x -= 1
+
+
+                elif cursor_y > 0: #Move back to previous line and delete
+                    cursor_x = len(text[cursor_y-1])
+                    text[cursor_y - 1] += text[cursor_y]
+                    del text[cursor_y]
+                    cursor_y -= 1
+
 
         elif key == curses.KEY_DC: #DEL
             save_undo_state(undo_stack, text, cursor_x, cursor_y)
             redo_stack.clear()
-            if cursor_x < len(text[cursor_y]):
-                line = text[cursor_y]
-                text[cursor_y] = line[:cursor_x] + line[1+cursor_x:]
+            if select_mode:
+                cursor_y, cursor_x = delete_selection(
+                    text,
+                    select_start_y,
+                    select_start_x,
+                    cursor_y,
+                    cursor_x
+                )
 
-            elif cursor_x == len(text[cursor_y]) and cursor_y < len(text) - 1:
-                text[cursor_y] += text[cursor_y + 1]
-                del text[cursor_y + 1]
+                select_mode = False
+            else:
+                if cursor_x < len(text[cursor_y]):
+                    line = text[cursor_y]
+                    text[cursor_y] = line[:cursor_x] + line[1+cursor_x:]
 
+                elif cursor_x == len(text[cursor_y]) and cursor_y < len(text) - 1:
+                    text[cursor_y] += text[cursor_y + 1]
+                    del text[cursor_y + 1]
+        #TAB/BTAB
         elif key == 9: #TAB
             save_undo_state(undo_stack, text, cursor_x, cursor_y)
             redo_stack.clear()
@@ -796,6 +890,9 @@ def editior(stdscr, filename):
                 cursor_x = apply_autocomplete(
                     text, cursor_y, cursor_x, suggestion, prefix
                 )
+            elif select_mode:
+                indent_selection(text, select_start_y, cursor_y)
+                cursor_x += 4
             else:
                 line = text[cursor_y]
                 # Count leading spaces
@@ -816,7 +913,12 @@ def editior(stdscr, filename):
             line = text[cursor_y]
             spaces_to_remove = 0
 
-            if line.startswith(" " * tab_size):
+            if select_mode:
+                unindent_selection(text, select_start_y, cursor_y)
+                cursor_x -= 4
+
+
+            elif line.startswith(" " * tab_size):
                 text[cursor_y] = line[tab_size:]
                 cursor_x = max(0, cursor_x - tab_size)
 
@@ -965,11 +1067,10 @@ def editior(stdscr, filename):
         elif key == 338: #pgdn
             half = visible_height // 2
             cursor_y_relivive_pos = cursor_y - scroll_pos_y
-            #scroll_pos_y = min(len(text) - height, scroll_pos_y + half)
             cursor_y = min(len(text) - 1, cursor_y + half)
             scroll_pos_y = cursor_y - cursor_y_relivive_pos
-            #if cursor_y > visible_height + scroll_pos_y:
-             #  scroll_pos_y = cursor_y
+
+
 
         #SAVE
         elif key == 19: #ctrl + s
@@ -1001,9 +1102,15 @@ def editior(stdscr, filename):
 
         #SELECT
         elif key == 0:  # Ctrl+Space
-            select_mode = True
-            select_start_y = cursor_y
-            select_start_x = cursor_x
+            if select_mode:
+                mode = "normal"
+                select_mode = False
+            else:
+                mode = "normal"
+                select_mode = True
+                select_start_y = cursor_y
+                select_start_x = cursor_x
+
 
         #QUIT
         elif key == 17: #ctrl + q
@@ -1045,7 +1152,6 @@ def editior(stdscr, filename):
                 nav_key_last  = True
             else:
                 nav_key_last = False
-
 
         # Ensure text is never empty
         if not text:
