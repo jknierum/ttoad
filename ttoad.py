@@ -595,9 +595,9 @@ def editior(stdscr, filename):
                 suggestion_on = True
                 for i in range(min(suggestions_shown, len(suggestion_list))):
                     if i == suggestion_sel:
-                        safe_addstr(stdscr, screen_y + top_margin + i + 1, (cursor_x - scroll_pos_x) + left_margin - len(prefix), suggestion_list[i], curses.color_pair(5) | curses.A_REVERSE)
+                        safe_addstr(stdscr, cursor_y + top_margin + i + 1, (cursor_x - scroll_pos_x) + left_margin - len(prefix), suggestion_list[i], curses.color_pair(5) | curses.A_REVERSE)
                     else:
-                        safe_addstr(stdscr, screen_y + top_margin + i + 1, (cursor_x - scroll_pos_x) + left_margin - len(prefix), suggestion_list[i], curses.color_pair(1) | curses.A_REVERSE)
+                        safe_addstr(stdscr, cursor_y + top_margin + i + 1, (cursor_x - scroll_pos_x) + left_margin - len(prefix), suggestion_list[i], curses.color_pair(1) | curses.A_REVERSE)
 
                     safe_addstr(stdscr, screen_y + top_margin, (cursor_x - scroll_pos_x) + left_margin, suggestion_list[suggestion_sel][len(prefix):], curses.color_pair(1))
             else:
