@@ -10,7 +10,6 @@ from syntax.engine import SyntaxHighlighter
 from syntax import SYNTAX_MAP
 from datetime import datetime
 
-#### ADD THIS TO TETST GIT OUT
 parser = argparse.ArgumentParser(
     prog="tinyt",
     description="Tinyt — a lightweight terminal text editor",
@@ -552,16 +551,8 @@ def editior(stdscr, filename):
         #MODE DISPLAY
         mode_dis = mode.upper()
         stdscr.addstr(height - 2, left_margin, " " + mode_dis + " ", curses.color_pair(5) | curses.A_REVERSE | curses.A_BOLD)
-
-
-<<<<<<< HEAD
-        #FIND
-        if mode == "find":
-            ####WORKING THIS IS AFTER COMMIT
-        #yanked
-=======
+        
         #YANKED
->>>>>>> tmp
         if yanked:
             first_line = yanked.split("\n", 1)[0]
 
@@ -972,9 +963,13 @@ def editior(stdscr, filename):
             )
 
         elif key == 338: #pgdn
-            half = height // 2
-            scroll_pos_y = min(len(text) - height, scroll_pos_y + half)
+            half = visible_height // 2
+            cursor_y_relivive_pos = cursor_y - scroll_pos_y
+            #scroll_pos_y = min(len(text) - height, scroll_pos_y + half)
             cursor_y = min(len(text) - 1, cursor_y + half)
+            scroll_pos_y = cursor_y - cursor_y_relivive_pos
+            #if cursor_y > visible_height + scroll_pos_y:
+             #  scroll_pos_y = cursor_y
 
         #SAVE
         elif key == 19: #ctrl + s
