@@ -1,11 +1,11 @@
 ----------TO DO-----------
 CURRENT-------------------
 - Find action
-
+- when selecting keep cursor in place and revert select by re keying
 f key=lastkey:
     select_on = false (needs to be a new var not last key because of -1)
 
-
+- woring on listing key binds under -h
 
 MAJOR---------------------
 - redesign  actions to be built from parts

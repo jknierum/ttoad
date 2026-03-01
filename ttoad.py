@@ -11,8 +11,8 @@ from syntax import SYNTAX_MAP
 import argparse
 
 parser = argparse.ArgumentParser(
-    prog="tinyt",
-    description="Tinyt — a lightweight terminal text editor",
+    prog="Ttoad",
+    description="Ttoad: a Tiny terminal model code editor ",
     epilog="""
     --Keybindings--
     save: ctrl + s
@@ -1041,6 +1041,7 @@ def editior(stdscr, filename):
             )
             status_message = "Undo"
             status_time = time.time()
+            select_mode = False
 
         # Ctrl+Y → Redo
         elif key == 25:
@@ -1053,6 +1054,9 @@ def editior(stdscr, filename):
             )
             status_message = "Redo"
             status_time = time.time()
+            select_mode = False
+
+
         #PGUP / PGDN
         elif key == 339: #pg up
             half = height // 2
