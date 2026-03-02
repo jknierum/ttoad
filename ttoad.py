@@ -240,7 +240,7 @@ def get_indent_level(line):
             break
     return count
 
-def check_for_block(text, cursor_y):
+def check_for_block(text, cursor_y, comment_cha):
     if not text:
         return cursor_y, cursor_y
 
@@ -252,7 +252,9 @@ def check_for_block(text, cursor_y):
     # Check upward
     y = cursor_y - 1
     while y >= 0:
-        if get_indent_level(text[y]) >= target_indent:
+        if len(text[y]) == 0:
+            break
+        elif get_indent_level(text[y]) > target_indent:
             start = y
             y -= 1
         else:
@@ -261,7 +263,15 @@ def check_for_block(text, cursor_y):
     # Check downward
     y = cursor_y + 1
     while y < len(text):
-        if get_indent_level(text[y]) >= target_indent:
+        line = text[y]
+        if len(text[y]) == 0:
+            break
+
+        elif line[0] == comment_cha:
+            end = y
+            y += 1
+
+        elif get_indent_level(text[y]) >= target_indent:
             end = y
             y += 1
         else:
@@ -453,7 +463,6 @@ def unindent_selection(text, select_start_y, cursor_y, tab="    "):
     for i in range(start_y, end_y + 1):
         if text[i].startswith(tab):
             text[i] = text[i][len(tab):]
-
 def find_all(text, word):
     results = []
 
@@ -461,12 +470,14 @@ def find_all(text, word):
         return results
 
     word_len = len(word)
+    word_lower = word.lower()  # Convert search word to lowercase once
 
     for y, line in enumerate(text):
         x = 0
+        line_lower = line.lower()  # Convert current line to lowercase
 
         while True:
-            x = line.find(word, x)
+            x = line_lower.find(word_lower, x)  # Search in lowercase version
 
             if x == -1:
                 break
@@ -494,9 +505,23 @@ def next_match(matches, cursor_y, cursor_x):
     # wrap around to first match
     return matches[0][0], matches[0][1]
 
+def last_match(matches, cursor_y, cursor_x):
+    if not matches:
+        return cursor_y, cursor_x
+
+    # find first match BEFORE cursor
+    for start_y, start_x, end_y, end_x in reversed(matches):
+        if (start_y, start_x) < (cursor_y, cursor_x):
+            return start_y, start_x
+
+    # wrap around to last match
+    return matches[-1][0], matches[-1][1]
+
+
+
 
 def editior(stdscr, filename):
-#    stdscr.timeout(50)  # refresh every 50ms
+    stdscr.timeout(50)  # refresh every 50ms
     curses.set_escdelay(1)
     status_message = ""
     status_time = 0
@@ -594,6 +619,8 @@ def editior(stdscr, filename):
             stdscr.addstr(1, left_margin, " " + status_message + " ", curses.color_pair(5) | curses.A_BOLD | curses.A_REVERSE)
             if time.time() - status_time > 2:
                 status_message = ""
+        elif mode == "find":
+            stdscr.addstr(1, left_margin, " FIND: " + query + " ", curses.color_pair(tm_colour) | curses.A_BOLD | curses.A_REVERSE)
         else:
             stdscr.addstr(1, left_margin, " " + dis_filename + " ", curses.color_pair(tm_colour) | curses.A_BOLD | curses.A_REVERSE)
 
@@ -760,23 +787,40 @@ def editior(stdscr, filename):
                         )
                 query = selected
                 select_mode = False
-            
-            if not query:
-                mode = "normal"
+
+#            if not query:
+#                mode = "normal"
             else:
                 matches = find_all(text, query)
 
-            if key == 102:
+            #TAB
+            if key == 9:
                 cursor_y, cursor_x = next_match(matches, cursor_y, cursor_x)
                 scroll_pos_y = cursor_y - int(visible_height / 2)
                 if scroll_pos_y > len(text):
                     scroll_pos_y = cursor_y
                 elif scroll_pos_y < 0:
                     scroll_pos_y = cursor_y
-                
+
+                scroll_pos_x =  0
+            #BTAB
+            elif key ==  curses.KEY_BTAB:
+                cursor_y, cursor_x = last_match(matches, cursor_y, cursor_x)
+                scroll_pos_y = cursor_y - int(visible_height / 2)
+                if scroll_pos_y > len(text):
+                    scroll_pos_y = cursor_y
+                elif scroll_pos_y < 0:
+                    scroll_pos_y = cursor_y
+
                 scroll_pos_x =  0
 
+            #LETTERS
+            if 32 <= key <= 126:
+                query = query + chr(key)
 
+            #BACKSPACE
+            if key == curses.KEY_BACKSPACE or key == 127:
+                query = query[:-1]
 
     # NORMAL MODE
         elif mode == "normal":
@@ -839,7 +883,7 @@ def editior(stdscr, filename):
 
                 select_mode = True
 
-                start, end = check_for_block(text, cursor_y)
+                start, end = check_for_block(text, cursor_y, comment_cha)
                 select_start_y = start
                 select_start_x = 0
                 cursor_y = end
@@ -899,303 +943,308 @@ def editior(stdscr, filename):
 
 
 
-    # ANY MODE
-        if key == 27: # ESC
-            mode = "normal"
-            select_mode = False
-    #BACKSPACE
-        elif key == curses.KEY_BACKSPACE or key == 127:
-            save_undo_state(undo_stack, text, cursor_x, cursor_y)
-            redo_stack.clear()
+    # ANY MODE BUT FIND
+        if not mode == "find":
+        #BACKSPACE
+            if key == curses.KEY_BACKSPACE or key == 127:
+                save_undo_state(undo_stack, text, cursor_x, cursor_y)
+                redo_stack.clear()
 
-            if select_mode:
-                cursor_y, cursor_x = delete_selection(
-                    text,
-                    select_start_y,
-                    select_start_x,
-                    cursor_y,
-                    cursor_x
-                )
+                if select_mode:
+                    cursor_y, cursor_x = delete_selection(
+                        text,
+                        select_start_y,
+                        select_start_x,
+                        cursor_y,
+                        cursor_x
+                    )
 
-                select_mode = False
+                    select_mode = False
 
 
-            else:
-                if cursor_x > 0:
-                    line = text[cursor_y]
-                    tab = get_tab_level(line)
-                    indent_width = len(line) - len(line.lstrip(" "))
-                    spaces_to_remove = 0
-
-                    if indent_width >= tab_size and cursor_x <= indent_width:
-                        # remove one indentation level
-                        text[cursor_y] = line[tab_size:]
-                        cursor_x = max(0, cursor_x - tab_size)
-                    else:
-                        text[cursor_y] = line[:cursor_x-1] + line[cursor_x:]
-                        cursor_x -= 1
-
-
-                elif cursor_y > 0: #Move back to previous line and delete
-                    cursor_x = len(text[cursor_y-1])
-                    text[cursor_y - 1] += text[cursor_y]
-                    del text[cursor_y]
-                    cursor_y -= 1
-
-
-        elif key == curses.KEY_DC: #DEL
-            save_undo_state(undo_stack, text, cursor_x, cursor_y)
-            redo_stack.clear()
-            if select_mode:
-                cursor_y, cursor_x = delete_selection(
-                    text,
-                    select_start_y,
-                    select_start_x,
-                    cursor_y,
-                    cursor_x
-                )
-
-                select_mode = False
-            else:
-                if cursor_x < len(text[cursor_y]):
-                    line = text[cursor_y]
-                    text[cursor_y] = line[:cursor_x] + line[1+cursor_x:]
-
-                elif cursor_x == len(text[cursor_y]) and cursor_y < len(text) - 1:
-                    text[cursor_y] += text[cursor_y + 1]
-                    del text[cursor_y + 1]
-        #TAB/BTAB
-        elif key == 9: #TAB
-            save_undo_state(undo_stack, text, cursor_x, cursor_y)
-            redo_stack.clear()
-            if suggestion_on == True:
-                cursor_x = apply_autocomplete(
-                    text, cursor_y, cursor_x, suggestion, prefix
-                )
-            elif select_mode:
-                indent_selection(text, select_start_y, cursor_y)
-                cursor_x += 4
-            else:
-                line = text[cursor_y]
-                # Count leading spaces
-                leading_spaces = len(line) - len(line.lstrip(" "))
-
-                # Compute how many spaces to add to align to next multiple of 4
-                spaces_to_add = tab_size - (leading_spaces % tab_size)
-
-                # Add spaces at the start
-                text[cursor_y] = (" " * spaces_to_add) + line
-
-                # Move cursor along if you want to stay at the same relative position
-                cursor_x += spaces_to_add
-
-        elif key == curses.KEY_BTAB:
-            save_undo_state(undo_stack, text, cursor_x, cursor_y)
-            redo_stack.clear()
-            line = text[cursor_y]
-            spaces_to_remove = 0
-
-            if select_mode:
-                unindent_selection(text, select_start_y, cursor_y)
-                cursor_x -= 4
-
-
-            elif line.startswith(" " * tab_size):
-                text[cursor_y] = line[tab_size:]
-                cursor_x = max(0, cursor_x - tab_size)
-
-            elif line.startswith(" "):
-                for i in range(min(4, len(line))):
-                    if line[i] == " ":
-                        spaces_to_remove += 1
-                    else:
-                        break
-
-                text[cursor_y] = line[spaces_to_remove:]
-                cursor_x = max(0, cursor_x - spaces_to_remove)
-
-        elif key == curses.KEY_END:
-            line = text[cursor_y]
-            cursor_x = len(line)
-
-        elif key == curses.KEY_HOME:
-            cursor_x = 0
-
-        elif key == curses.KEY_ENTER or key == 10:
-            save_undo_state(undo_stack, text, cursor_x, cursor_y)
-            redo_stack.clear()
-            if cursor_x == 0:
-                # insert new line with indent + remaining text
-                text.insert(cursor_y,"")
-
-                # move cursor to start of new line after indent
-                cursor_y += 1
-                cursor_x = 0
-            else:
-
-                line = text[cursor_y]
-
-                # get existing indent
-                indent = line[:len(line) - len(line.lstrip(" "))]
-
-                # split line
-                before = line[:cursor_x]
-                after = line[cursor_x:]
-
-                # replace current line
-                text[cursor_y] = before
-
-                # insert new line with indent + remaining text
-                text.insert(cursor_y + 1, indent + after)
-
-                # move cursor to start of new line after indent
-                cursor_y += 1
-                cursor_x = len(indent)
-
-            if cursor_y < scroll_pos_y:
-                scroll_pos_y = cursor_y
-            elif cursor_y >= scroll_pos_y + visible_height:
-                scroll_pos_y = cursor_y - visible_height + 1
-
-
-        elif key == curses.KEY_LEFT:
-            if cursor_x > 0:
-                cursor_x -= 1
-                stored_cursor_pos_x = cursor_x
-
-                if cursor_x < scroll_pos_x:
-                    scroll_pos_x = cursor_x
-                elif cursor_x >= scroll_pos_x + visible_width:
-                    scroll_pos_x = cursor_x - visible_width + 1
-        elif key == curses.KEY_RIGHT:
-            if cursor_x < line_length:
-                cursor_x += 1
-                stored_cursor_pos_x = cursor_x
-
-                if cursor_x < scroll_pos_x:
-                    scroll_pos_x = cursor_x
-                elif cursor_x >= scroll_pos_x + visible_width:
-                    scroll_pos_x = cursor_x - visible_width + 1
-        elif key == curses.KEY_UP:
-            if suggestion_on == True:
-                visible_count = min(suggestions_shown, len(suggestion_list))
-                if suggestion_sel > 0:
-                    suggestion_sel -= 1
                 else:
-                    suggestion_sel = visible_count - 1
-            else:
-                if cursor_y > 0:
-                    cursor_y -= 1
-                    line_length = len(text[cursor_y])
-                    cursor_x = min(stored_cursor_pos_x, line_length)
+                    if cursor_x > 0:
+                        line = text[cursor_y]
+                        tab = get_tab_level(line)
+                        indent_width = len(line) - len(line.lstrip(" "))
+                        spaces_to_remove = 0
+
+                        if indent_width >= tab_size and cursor_x <= indent_width:
+                            # remove one indentation level
+                            text[cursor_y] = line[tab_size:]
+                            cursor_x = max(0, cursor_x - tab_size)
+                        else:
+                            text[cursor_y] = line[:cursor_x-1] + line[cursor_x:]
+                            cursor_x -= 1
+
+
+                    elif cursor_y > 0: #Move back to previous line and delete
+                        cursor_x = len(text[cursor_y-1])
+                        text[cursor_y - 1] += text[cursor_y]
+                        del text[cursor_y]
+                        cursor_y -= 1
+
+
+            elif key == curses.KEY_DC: #DEL
+                save_undo_state(undo_stack, text, cursor_x, cursor_y)
+                redo_stack.clear()
+                if select_mode:
+                    cursor_y, cursor_x = delete_selection(
+                        text,
+                        select_start_y,
+                        select_start_x,
+                        cursor_y,
+                        cursor_x
+                    )
+
+                    select_mode = False
+                else:
+                    if cursor_x < len(text[cursor_y]):
+                        line = text[cursor_y]
+                        text[cursor_y] = line[:cursor_x] + line[1+cursor_x:]
+
+                    elif cursor_x == len(text[cursor_y]) and cursor_y < len(text) - 1:
+                        text[cursor_y] += text[cursor_y + 1]
+                        del text[cursor_y + 1]
+            #TAB/BTAB
+            elif key == 9: #TAB
+                save_undo_state(undo_stack, text, cursor_x, cursor_y)
+                redo_stack.clear()
+                if suggestion_on == True:
+                    cursor_x = apply_autocomplete(
+                        text, cursor_y, cursor_x, suggestion, prefix
+                    )
+                elif select_mode:
+                    indent_selection(text, select_start_y, cursor_y)
+                    cursor_x += 4
+                else:
+                    line = text[cursor_y]
+                    # Count leading spaces
+                    leading_spaces = len(line) - len(line.lstrip(" "))
+
+                    # Compute how many spaces to add to align to next multiple of 4
+                    spaces_to_add = tab_size - (leading_spaces % tab_size)
+
+                    # Add spaces at the start
+                    text[cursor_y] = (" " * spaces_to_add) + line
+
+                    # Move cursor along if you want to stay at the same relative position
+                    cursor_x += spaces_to_add
+
+            elif key == curses.KEY_BTAB:
+                save_undo_state(undo_stack, text, cursor_x, cursor_y)
+                redo_stack.clear()
+                line = text[cursor_y]
+                spaces_to_remove = 0
+
+                if select_mode:
+                    unindent_selection(text, select_start_y, cursor_y)
+                    cursor_x -= 4
+
+
+                elif line.startswith(" " * tab_size):
+                    text[cursor_y] = line[tab_size:]
+                    cursor_x = max(0, cursor_x - tab_size)
+
+                elif line.startswith(" "):
+                    for i in range(min(4, len(line))):
+                        if line[i] == " ":
+                            spaces_to_remove += 1
+                        else:
+                            break
+
+                    text[cursor_y] = line[spaces_to_remove:]
+                    cursor_x = max(0, cursor_x - spaces_to_remove)
+
+            elif key == curses.KEY_END:
+                line = text[cursor_y]
+                cursor_x = len(line)
+
+            elif key == curses.KEY_HOME:
+                cursor_x = 0
+
+            elif key == curses.KEY_ENTER or key == 10:
+                if not mode == "find":
+                    save_undo_state(undo_stack, text, cursor_x, cursor_y)
+                    redo_stack.clear()
+                    if cursor_x == 0:
+                        # insert new line with indent + remaining text
+                        text.insert(cursor_y,"")
+
+                        # move cursor to start of new line after indent
+                        cursor_y += 1
+                        cursor_x = 0
+                    else:
+
+                        line = text[cursor_y]
+
+                        # get existing indent
+                        indent = line[:len(line) - len(line.lstrip(" "))]
+
+                        # split line
+                        before = line[:cursor_x]
+                        after = line[cursor_x:]
+
+                        # replace current line
+                        text[cursor_y] = before
+
+                        # insert new line with indent + remaining text
+                        text.insert(cursor_y + 1, indent + after)
+
+                        # move cursor to start of new line after indent
+                        cursor_y += 1
+                        cursor_x = len(indent)
 
                     if cursor_y < scroll_pos_y:
                         scroll_pos_y = cursor_y
                     elif cursor_y >= scroll_pos_y + visible_height:
                         scroll_pos_y = cursor_y - visible_height + 1
 
-        elif key == curses.KEY_DOWN:
-            if suggestion_on == True:
-                visible_count = min(suggestions_shown, len(suggestion_list))
-                if suggestion_sel < visible_count - 1:
-                    suggestion_sel += 1
+
+            elif key == curses.KEY_LEFT:
+                if cursor_x > 0:
+                    cursor_x -= 1
+                    stored_cursor_pos_x = cursor_x
+
+                    if cursor_x < scroll_pos_x:
+                        scroll_pos_x = cursor_x
+                    elif cursor_x >= scroll_pos_x + visible_width:
+                        scroll_pos_x = cursor_x - visible_width + 1
+            elif key == curses.KEY_RIGHT:
+                if cursor_x < line_length:
+                    cursor_x += 1
+                    stored_cursor_pos_x = cursor_x
+
+                    if cursor_x < scroll_pos_x:
+                        scroll_pos_x = cursor_x
+                    elif cursor_x >= scroll_pos_x + visible_width:
+                        scroll_pos_x = cursor_x - visible_width + 1
+            elif key == curses.KEY_UP:
+                if suggestion_on == True:
+                    visible_count = min(suggestions_shown, len(suggestion_list))
+                    if suggestion_sel > 0:
+                        suggestion_sel -= 1
+                    else:
+                        suggestion_sel = visible_count - 1
                 else:
-                    suggestion_sel = 0
-            else:
-                if cursor_y < len(text)-1:
-                    cursor_y += 1
-                    line_length = len(text[cursor_y])
-                    cursor_x = min(stored_cursor_pos_x, line_length)
+                    if cursor_y > 0:
+                        cursor_y -= 1
+                        line_length = len(text[cursor_y])
+                        cursor_x = min(stored_cursor_pos_x, line_length)
 
-                if cursor_y < scroll_pos_y:
-                    scroll_pos_y = cursor_y
-                elif cursor_y >= scroll_pos_y + visible_height:
-                    scroll_pos_y = cursor_y - visible_height + 1
+                        if cursor_y < scroll_pos_y:
+                            scroll_pos_y = cursor_y
+                        elif cursor_y >= scroll_pos_y + visible_height:
+                            scroll_pos_y = cursor_y - visible_height + 1
 
-        # Ctrl+U → Undo
-        elif key == 21:
-            text, cursor_x, cursor_y = perform_undo(
-                undo_stack,
-                redo_stack,
-                text,
-                cursor_x,
-                cursor_y
-            )
-            status_message = "Undo"
-            status_time = time.time()
-            select_mode = False
+            elif key == curses.KEY_DOWN:
+                if suggestion_on == True:
+                    visible_count = min(suggestions_shown, len(suggestion_list))
+                    if suggestion_sel < visible_count - 1:
+                        suggestion_sel += 1
+                    else:
+                        suggestion_sel = 0
+                else:
+                    if cursor_y < len(text)-1:
+                        cursor_y += 1
+                        line_length = len(text[cursor_y])
+                        cursor_x = min(stored_cursor_pos_x, line_length)
 
-        # Ctrl+Y → Redo
-        elif key == 25:
-            text, cursor_x, cursor_y = perform_redo(
-                undo_stack,
-                redo_stack,
-                text,
-                cursor_x,
-                cursor_y
-            )
-            status_message = "Redo"
-            status_time = time.time()
-            select_mode = False
+                    if cursor_y < scroll_pos_y:
+                        scroll_pos_y = cursor_y
+                    elif cursor_y >= scroll_pos_y + visible_height:
+                        scroll_pos_y = cursor_y - visible_height + 1
 
-
-        #PGUP / PGDN
-        elif key == 339: #pg up
-            half = height // 2
-
-            scroll_pos_y = max(0, scroll_pos_y - half)
-
-            cursor_y = max(
-                scroll_pos_y,
-                min(cursor_y - half, scroll_pos_y + height - 1)
-            )
-
-        elif key == 338: #pgdn
-            half = visible_height // 2
-            cursor_y_relivive_pos = cursor_y - scroll_pos_y
-            cursor_y = min(len(text) - 1, cursor_y + half)
-            scroll_pos_y = cursor_y - cursor_y_relivive_pos
-
-
-
-        #SAVE
-        elif key == 19: #ctrl + s
-            if filename:
-                    save_file(filename, text)
-                    saved_text_for_check = text.copy()
-                    dis_filename = format_display_filename(filename)
-                    status_message = f"Saved {dis_filename}"
-                    status_time = time.time()
-                    mode = "normal"
-        #PASTE
-        elif key == 16: # Ctrl+P example
-                save_undo_state(undo_stack, text, cursor_x, cursor_y)
-                redo_stack.clear()
-
-                paste = paste_from_clipboard()
-                cursor_y, cursor_x = insert_paste(text, cursor_y, cursor_x, paste)
-        #COPY
-        elif key == 3:  # Ctrl+C
-            if select_mode:
-                selected = get_selected_text(
+            # Ctrl+U → Undo
+            elif key == 21:
+                text, cursor_x, cursor_y = perform_undo(
+                    undo_stack,
+                    redo_stack,
                     text,
-                    select_start_y,
-                    select_start_x,
-                    cursor_y,
-                    cursor_x
+                    cursor_x,
+                    cursor_y
                 )
-                copy_to_clipboard(selected)
-
-        #SELECT
-        elif key == 0:  # Ctrl+Space
-            if select_mode:
-                mode = "normal"
+                scroll_pos_y = cursor_y
+                status_message = "Undo"
+                status_time = time.time()
                 select_mode = False
-            else:
-                mode = "normal"
-                select_mode = True
-                select_start_y = cursor_y
-                select_start_x = cursor_x
+
+            # Ctrl+Y → Redo
+            elif key == 25:
+                text, cursor_x, cursor_y = perform_redo(
+                    undo_stack,
+                    redo_stack,
+                    text,
+                    cursor_x,
+                    cursor_y
+                )
+                status_message = "Redo"
+                status_time = time.time()
+                select_mode = False
+
+
+            #PGUP / PGDN
+            elif key == 339: #pg up
+                half = height // 2
+
+                scroll_pos_y = max(0, scroll_pos_y - half)
+
+                cursor_y = max(
+                    scroll_pos_y,
+                    min(cursor_y - half, scroll_pos_y + height - 1)
+                )
+
+            elif key == 338: #pgdn
+                half = visible_height // 2
+                cursor_y_relivive_pos = cursor_y - scroll_pos_y
+                cursor_y = min(len(text) - 1, cursor_y + half)
+                scroll_pos_y = cursor_y - cursor_y_relivive_pos
+
+
+
+            #SAVE
+            elif key == 19: #ctrl + s
+                if filename:
+                        save_file(filename, text)
+                        saved_text_for_check = text.copy()
+                        dis_filename = format_display_filename(filename)
+                        status_message = f"Saved {dis_filename}"
+                        status_time = time.time()
+                        mode = "normal"
+                        select_mode = False
+            #PASTE
+            elif key == 16: # Ctrl+P example
+                    save_undo_state(undo_stack, text, cursor_x, cursor_y)
+                    redo_stack.clear()
+
+                    paste = paste_from_clipboard()
+                    cursor_y, cursor_x = insert_paste(text, cursor_y, cursor_x, paste)
+            #COPY
+            elif key == 3:  # Ctrl+C
+                if select_mode:
+                    selected = get_selected_text(
+                        text,
+                        select_start_y,
+                        select_start_x,
+                        cursor_y,
+                        cursor_x
+                    )
+                    copy_to_clipboard(selected)
+
+            #SELECT
+            elif key == 0:  # Ctrl+Space
+                if select_mode:
+                    mode = "normal"
+                    select_mode = False
+                else:
+                    mode = "normal"
+                    select_mode = True
+                    select_start_y = cursor_y
+                    select_start_x = cursor_x
+    #ANY MODE
+        if key == 27: # ESC
+            mode = "normal"
+            select_mode = False
 
         #QUIT
         elif key == 17: #ctrl + q
