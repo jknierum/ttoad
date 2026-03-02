@@ -612,6 +612,7 @@ def editior(stdscr, filename):
     curses.init_pair(5, curses.COLOR_YELLOW, curses.COLOR_BLACK) # strings
     curses.init_pair(6, curses.COLOR_MAGENTA, curses.COLOR_BLACK)# numbers
     curses.init_pair(7, curses.COLOR_CYAN, curses.COLOR_BLACK)   # function names
+    curses.init_pair(8, curses.COLOR_YELLOW, curses.COLOR_BLACK)  # decorators
     stdscr.clear()
 
     if filename:
