@@ -51,9 +51,10 @@ Extras:
 
 
 ----------DONE------------
-- home brings to the front of the text in line
+
 
 --------PREVIOUS----------
+- home brings to the front of the text in line
 ! up and down now exits find when not autocomplete list
 ! undo and redo should store scroll pos
 ! paste crash bug

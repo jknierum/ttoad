@@ -596,7 +596,7 @@ def find_next_match(matches, cursor_y, cursor_x):
 
 
 def editior(stdscr, filename):
-    stdscr.timeout(50)  # refresh every 50ms
+#    stdscr.timeout(50)  # refresh every 50ms
     curses.set_escdelay(1)
     status_message = ""
     status_time = 0
