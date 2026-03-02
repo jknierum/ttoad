@@ -1731,3 +1731,4 @@ def editior(stdscr, filename):
 
 
 curses.wrapper(lambda stdscr: editior(stdscr, filename))
+
