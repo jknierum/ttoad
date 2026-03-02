@@ -1493,7 +1493,7 @@ def editior(stdscr, filename):
                 elif cursor_x >= scroll_pos_x + visible_width:
                     scroll_pos_x = cursor_x - visible_width + 1
         elif key == curses.KEY_UP:
-            if mode == "find" and not can_autocomplete(text, cursor_y, cursor_x, mode, nav_key_last, prefix):
+            if mode == "find" and not len(suggestion_list) > 0:
                 mode = "normal"
             if suggestion_on == True:
                 visible_count = min(suggestions_shown, len(suggestion_list))
@@ -1513,7 +1513,7 @@ def editior(stdscr, filename):
                         scroll_pos_y = cursor_y - visible_height + 1
 
         elif key == curses.KEY_DOWN:
-            if mode == "find" and not can_autocomplete(text, cursor_y, cursor_x, mode, nav_key_last, prefix):
+            if mode == "find" and not len(suggestion_list) > 0:
                 mode = "normal"
             if suggestion_on == True:
                 visible_count = min(suggestions_shown, len(suggestion_list))
