@@ -1,24 +1,10 @@
 ----------TO DO-----------
 CURRENT-------------------
-- Find typed word
-
-- when selecting keep cursor in place and revert select by re keying
-
-f key=lastkey:
-    select_on = false (needs to be a new var not last key because of -1)
-
-- woring on listing key binds under -h
-! undo and redo should store scroll pos
+! block sel bug (selecting lower than it above)
+- if selecting and repeats sel key: undo
+- working on listing key binds under -h
 
 MAJOR---------------------
-- redesign  actions to be built from parts
-    - selection (sel,block,word, etc)
-    - repeats (number)
-    - Action (delete, copy, jump)
-
-    b12d = delete the next 12 blocks
-    b-12d = delete the last 12 blocks
-- find
 
 MINOR---------------------
 - home should bring to the frount of the text in line
@@ -34,10 +20,10 @@ MINOR---------------------
         save: ctrl + s
 #        write to new: ctrl + w
         quit: ctrl + q
-#        copy: ctrl + c  (needs sel)
         paste: ctrl + p
+        copy: ctrl + y
         undo: ctrl + u
-        redo: ctrl + y
+        redo: ctrl + r
         move Tinty to back: ctrl + z (fg to bring back to front)
 
     action types: used for text manipulation
@@ -66,13 +52,23 @@ Extras:
 
 
 ----------DONE------------
+! undo and redo should store scroll pos
+! paste crash bug
+- any of the ctrl actions should pull you from find
+- ctrl + y = yank
+- cut (x, ctrl + x)
+- paste now no longer adds a /n after the cursor
+- find live highlights and jumps top next word
+- find has autocomplete that inserts with enter
+- autocomplete inserts with enter
+- can scroll through autocomplete when in find now
+
+--------PREVIOUS----------
 - block sel fixed ignores # when selecting
 - when find word cursor should jump to location
 - reintroduceed 50ms updatng so find text would not wait for next key press
 - added find typed text
 - tab / btab to cycle through find options
-
---------PREVIOUS----------
 - when backspace to prev line the cursor jumps to end of line
 - tab select
 - comment select

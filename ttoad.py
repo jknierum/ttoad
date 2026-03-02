@@ -163,10 +163,11 @@ def get_current_word(text, cursor_y, cursor_x):
 def get_current_prefix(text, cursor_y, cursor_x):
     line = text[cursor_y]
 
+    i = cursor_x - 1
+
     if not line or cursor_x == 0:
         return ""
 
-    i = cursor_x - 1
 
     if not (line[i].isalnum() or line[i] == "_"):
         return ""
@@ -198,19 +199,23 @@ def get_autocomplete_list(prefix, words):
     return sorted([w for w in words if w.lower().startswith(prefix.lower()) and w.lower() != prefix.lower()])
 
 
-def apply_autocomplete(text, cursor_y, cursor_x, suggestion, prefix):
+def apply_autocomplete(mode, query, text, cursor_y, cursor_x, suggestion, prefix):
     line = text[cursor_y]
     remainder = suggestion[len(prefix):]
 
-    text[cursor_y] = (
-        line[:cursor_x - len(prefix)] + suggestion + line[cursor_x:]
-    )
 
-    return cursor_x + len(remainder)
+    if mode == "find":
+        return query + remainder
+
+    else:
+        text[cursor_y] = (
+            line[:cursor_x - len(prefix)] + suggestion + line[cursor_x:]
+        )
+        return cursor_x + len(remainder)
 
 def can_autocomplete(text, cursor_y, cursor_x, mode, nav_key_last, prefix = ""):
     line = text[cursor_y]
-    if not mode == "insert":
+    if mode == "normal":
         return False
     if nav_key_last:
         return False
@@ -279,38 +284,70 @@ def check_for_block(text, cursor_y, comment_cha):
 
     return start, end
 
-def save_undo_state(undo_stack, text, cursor_x, cursor_y):
+def save_undo_state(undo_stack, text, cursor_x, cursor_y, scroll_pos_x, scroll_pos_y):
+
     undo_stack.append((
         text.copy(),
         cursor_x,
-        cursor_y
+        cursor_y,
+        scroll_pos_x,
+        scroll_pos_y
     ))
 
-    # Limit history size (optional, prevents memory explosion)
+    # Clear redo stack when new action happens (IMPORTANT)
+    # redo_stack.clear()  ← do this outside this function if needed
+
+    # Limit history size
     if len(undo_stack) > 500:
         undo_stack.pop(0)
 
+def perform_undo(undo_stack, redo_stack, text, cursor_x, cursor_y, scroll_pos_x, scroll_pos_y):
 
-def perform_undo(undo_stack, redo_stack, text, cursor_x, cursor_y):
     if not undo_stack:
-        return text, cursor_x, cursor_y
+        return text, cursor_x, cursor_y, scroll_pos_x, scroll_pos_y
 
-    redo_stack.append((text.copy(), cursor_x, cursor_y))
+    # Save current state to redo
+    redo_stack.append((
+        text.copy(),
+        cursor_x,
+        cursor_y,
+        scroll_pos_x,
+        scroll_pos_y
+    ))
 
-    prev_text, prev_x, prev_y = undo_stack.pop()
+    prev_text, prev_x, prev_y, prev_scroll_x, prev_scroll_y = undo_stack.pop()
 
-    return prev_text.copy(), prev_x, prev_y
+    return (
+        prev_text.copy(),
+        prev_x,
+        prev_y,
+        prev_scroll_x,
+        prev_scroll_y
+    )
 
+def perform_redo(undo_stack, redo_stack, text, cursor_x, cursor_y, scroll_pos_x, scroll_pos_y):
 
-def perform_redo(undo_stack, redo_stack, text, cursor_x, cursor_y):
     if not redo_stack:
-        return text, cursor_x, cursor_y
+        return text, cursor_x, cursor_y, scroll_pos_x, scroll_pos_y
 
-    undo_stack.append((text.copy(), cursor_x, cursor_y))
+    # Save current state to undo
+    undo_stack.append((
+        text.copy(),
+        cursor_x,
+        cursor_y,
+        scroll_pos_x,
+        scroll_pos_y
+    ))
 
-    next_text, next_x, next_y = redo_stack.pop()
+    next_text, next_x, next_y, next_scroll_x, next_scroll_y = redo_stack.pop()
 
-    return next_text.copy(), next_x, next_y
+    return (
+        next_text.copy(),
+        next_x,
+        next_y,
+        next_scroll_x,
+        next_scroll_y
+    )
 
 def paste_from_clipboard():
     try:
@@ -324,22 +361,33 @@ def paste_from_clipboard():
         return ""
 
 def insert_paste(text, cursor_y, cursor_x, paste_string):
+    # Strip any trailing newline that might be causing issues
+    paste_string = paste_string.rstrip('\n')
+
     lines = paste_string.split('\n')
+    current_line = text[cursor_y]
+    before_cursor = current_line[:cursor_x]
+    after_cursor = current_line[cursor_x:]
 
-    before = text[cursor_y][:cursor_x]
-    after = text[cursor_y][cursor_x:]
+    if len(lines) == 1:
+        # Single line paste
+        text[cursor_y] = before_cursor + lines[0] + after_cursor
+        cursor_x += len(lines[0])
+    else:
+        # Multi-line paste
+        text[cursor_y] = before_cursor + lines[0]
 
-    text[cursor_y] = before + lines[0]
+        for i in range(1, len(lines)):
+            cursor_y += 1
+            if i == len(lines) - 1:
+                text.insert(cursor_y, lines[i] + after_cursor)
+            else:
+                text.insert(cursor_y, lines[i])
 
-    for i in range(1, len(lines)):
-        cursor_y += 1
-        text.insert(cursor_y, lines[i])
-
-    text[cursor_y] += after
-
-    cursor_x = len(lines[-1])
+        cursor_x = len(lines[-1])
 
     return cursor_y, cursor_x
+
 
 def copy_to_clipboard(text):
     try:
@@ -517,6 +565,33 @@ def last_match(matches, cursor_y, cursor_x):
     # wrap around to last match
     return matches[-1][0], matches[-1][1]
 
+def find_and_highlight(text, query, cursor_y, cursor_x, scroll_pos_y, visible_height):
+    """Find all matches and return matches list and visible matches for highlighting"""
+    if not query:
+        return [], []
+
+    matches = find_all(text, query)
+
+    # Filter matches that are visible on screen
+    visible_matches = []
+    for start_y, start_x, end_y, end_x in matches:
+        if start_y >= scroll_pos_y and start_y < scroll_pos_y + visible_height:
+            visible_matches.append((start_y, start_x, end_y, end_x))
+
+    return matches, visible_matches
+
+def find_next_match(matches, cursor_y, cursor_x):
+    """Find the next match after cursor position"""
+    if not matches:
+        return None
+
+    # Find first match after cursor
+    for start_y, start_x, end_y, end_x in matches:
+        if (start_y, start_x) > (cursor_y, cursor_x):
+            return (start_y, start_x)
+
+    # Wrap around to first match
+    return (matches[0][0], matches[0][1])
 
 
 
@@ -584,6 +659,11 @@ def editior(stdscr, filename):
     find_x = 0
     query = ""
 
+    find_matches = []  # Store all matches
+    find_visible_matches = []  # Store visible matches for highlighting
+    current_match_pos = None  # Current match position (for cursor)
+
+    current_match_range = None  # Will store (start_y, start_x, end_y, end_x)
 
     def get_tab_level(line, tab_size=4):
         count = 0
@@ -653,20 +733,46 @@ def editior(stdscr, filename):
             screen_line_y = i + scroll_pos_y
 
             for j, ch in enumerate(visible_line):
-
                 screen_x = j + left_margin
                 screen_y = i + top_margin
+                actual_x = j + scroll_pos_x
+                actual_y = screen_line_y
+
+                # Check if this character is part of a find match
+                is_match = False
+                if mode == "find" and query and find_visible_matches:
+                    for match_y, match_start_x, match_end_y, match_end_x in find_visible_matches:
+                        if actual_y == match_y and actual_x >= match_start_x and actual_x < match_end_x:
+                            is_match = True
+                            break
+
+                # Check if this is the current match (using the full range)
+                is_current_match = False
+                if current_match_range:
+                    match_y, match_start_x, match_end_y, match_end_x = current_match_range
+                    if actual_y == match_y and actual_x >= match_start_x and actual_x < match_end_x:
+                        is_current_match = True
 
                 if select_mode and is_selected(
                     screen_line_y,
-                    j + scroll_pos_x,
+                    actual_x,
                     cursor_y,
                     cursor_x,
                     select_start_y,
                     select_start_x
                 ):
                     stdscr.addstr(screen_y, screen_x, ch, curses.A_REVERSE)
+                elif is_current_match and mode == "find":
+                    # Highlight entire current match with reverse and bold
+                    stdscr.addstr(screen_y, screen_x, ch, curses.A_REVERSE | curses.A_BOLD)
 
+                elif is_match:
+                    # Highlight other matches
+                    stdscr.addstr(screen_y, screen_x, ch, curses.color_pair(5) | curses.A_BOLD | curses.A_REVERSE)
+                else:
+                    # Normal text - already handled by syntax highlighter
+                    # But we need to let the highlighter do its job
+                    pass
 
 
 
@@ -717,36 +823,70 @@ def editior(stdscr, filename):
 
 
         #Auto complete
-        prefix = get_current_prefix(text, cursor_y, cursor_x)
-        store_prefix = prefix
-        words = collect_words(text)
-        suggestion_list = get_autocomplete_list(prefix, words)
+        if mode == "find":
+            prefix = query
+            store_prefix = prefix
+            words = collect_words(text)
+            suggestion_list = get_autocomplete_list(prefix, words)
 
 
-        if suggestion_list:
-            suggestion_sel = max(0, min(suggestion_sel, len(suggestion_list) - 1))
-        else:
-            suggestion_sel = 0
-
-        if prefix and can_autocomplete(text, cursor_y - scroll_pos_y, cursor_x, mode, nav_key_last, prefix) and mode == "insert":
             if suggestion_list:
-                suggestion = suggestion_list[suggestion_sel]
-
-        if prefix and can_autocomplete(text, cursor_y - scroll_pos_y, cursor_x, mode, nav_key_last, prefix) and mode == "insert":
-            if suggestion_list:
-                suggestion = suggestion_list[suggestion_sel]
-                suggestion_on = True
-                for i in range(min(suggestions_shown, len(suggestion_list))):
-                    if i == suggestion_sel:
-                        safe_addstr(stdscr, cursor_y - scroll_pos_y + top_margin + i + 1, (cursor_x - scroll_pos_x) + left_margin - len(prefix), suggestion_list[i], curses.color_pair(5) | curses.A_REVERSE)
-                    else:
-                        safe_addstr(stdscr, cursor_y - scroll_pos_y + top_margin + i + 1, (cursor_x - scroll_pos_x) + left_margin - len(prefix), suggestion_list[i], curses.color_pair(1) | curses.A_REVERSE)
-
-                    safe_addstr(stdscr, cursor_y - scroll_pos_y + top_margin, (cursor_x - scroll_pos_x) + left_margin, suggestion_list[suggestion_sel][len(prefix):], curses.color_pair(1))
+                suggestion_sel = max(0, min(suggestion_sel, len(suggestion_list) - 1))
             else:
-                suggestion_on = False
                 suggestion_sel = 0
-                suggestion = None
+
+            if prefix and can_autocomplete(text, cursor_y - scroll_pos_y, cursor_x, mode, nav_key_last, prefix):
+                if suggestion_list:
+                    suggestion = suggestion_list[suggestion_sel]
+
+            if prefix and can_autocomplete(text, cursor_y - scroll_pos_y, cursor_x, mode, nav_key_last, prefix):
+                if suggestion_list:
+                    suggestion = suggestion_list[suggestion_sel]
+                    suggestion_on = True
+                    for i in range(min(suggestions_shown, len(suggestion_list))):
+                        if i == suggestion_sel:
+                            safe_addstr(stdscr, 1 + i + 1, left_margin + len(" FIND: "), suggestion_list[i], curses.color_pair(5) | curses.A_REVERSE)
+                        else:
+                            safe_addstr(stdscr, 1 + i + 1, left_margin + len(" FIND: "), suggestion_list[i], curses.color_pair(1) | curses.A_REVERSE)
+
+                        safe_addstr(stdscr, 1, left_margin + len(prefix) + len(" FIND: "), suggestion_list[suggestion_sel][len(prefix):], curses.color_pair(1))
+                else:
+                    suggestion_on = False
+                    suggestion_sel = 0
+                    suggestion = None
+
+        else:
+            prefix = get_current_prefix(text, cursor_y, cursor_x)
+            store_prefix = prefix
+            words = collect_words(text)
+            suggestion_list = get_autocomplete_list(prefix, words)
+
+
+            if suggestion_list:
+                suggestion_sel = max(0, min(suggestion_sel, len(suggestion_list) - 1))
+            else:
+                suggestion_sel = 0
+
+            if prefix and can_autocomplete(text, cursor_y - scroll_pos_y, cursor_x, mode, nav_key_last, prefix) and mode == "insert":
+                if suggestion_list:
+                    suggestion = suggestion_list[suggestion_sel]
+
+            if prefix and can_autocomplete(text, cursor_y - scroll_pos_y, cursor_x, mode, nav_key_last, prefix) and mode == "insert":
+                if suggestion_list:
+                    suggestion = suggestion_list[suggestion_sel]
+                    suggestion_on = True
+                    for i in range(min(suggestions_shown, len(suggestion_list))):
+                        if i == suggestion_sel:
+                            safe_addstr(stdscr, cursor_y - scroll_pos_y + top_margin + i + 1, (cursor_x - scroll_pos_x) + left_margin - len(prefix), suggestion_list[i], curses.color_pair(5) | curses.A_REVERSE)
+                        else:
+                            safe_addstr(stdscr, cursor_y - scroll_pos_y + top_margin + i + 1, (cursor_x - scroll_pos_x) + left_margin - len(prefix), suggestion_list[i], curses.color_pair(1) | curses.A_REVERSE)
+
+                        safe_addstr(stdscr, cursor_y - scroll_pos_y + top_margin, (cursor_x - scroll_pos_x) + left_margin, suggestion_list[suggestion_sel][len(prefix):], curses.color_pair(1))
+                else:
+                    suggestion_on = False
+                    suggestion_sel = 0
+                    suggestion = None
+
 
         # Clip cursor so it stays inside screen
         cursor_y = max(0, min(cursor_y, len(text) - 1))
@@ -768,7 +908,14 @@ def editior(stdscr, filename):
     # INSERT MODE
         if mode == "insert":
             if 32 <= key <= 126:
-                save_undo_state(undo_stack, text, cursor_x, cursor_y)
+                save_undo_state(
+                    undo_stack,
+                    text,
+                    cursor_x,
+                    cursor_y,
+                    scroll_pos_x,
+                    scroll_pos_y
+                )
                 redo_stack.clear()
                 line = text[cursor_y]
                 text[cursor_y] = line[:cursor_x] + chr(key) + line[cursor_x:]
@@ -787,40 +934,146 @@ def editior(stdscr, filename):
                         )
                 query = selected
                 select_mode = False
-
-#            if not query:
-#                mode = "normal"
             else:
-                matches = find_all(text, query)
+                # Update matches whenever query changes
+                find_matches, find_visible_matches = find_and_highlight(
+                    text, query, cursor_y, cursor_x, scroll_pos_y, visible_height
+                )
+
+                # Find the next match from current cursor position
+                next_match_pos = find_next_match(find_matches, cursor_y, cursor_x -1)
+                if next_match_pos:
+                    current_match_pos = next_match_pos
+                    # Update the full range for the current match
+                    for match in find_matches:
+                        if match[0] == next_match_pos[0] and match[1] == next_match_pos[1]:
+                            current_match_range = match
+                            break
+                    # Move cursor to the match position
+                    cursor_y, cursor_x = current_match_pos
+
+                    # Adjust scroll to make the match visible
+                    if cursor_y < scroll_pos_y:
+                        scroll_pos_y = cursor_y
+                    elif cursor_y >= scroll_pos_y + visible_height:
+                        scroll_pos_y = cursor_y - visible_height + 1
+
+                    if cursor_x < scroll_pos_x:
+                        scroll_pos_x = cursor_x
+                    elif cursor_x >= scroll_pos_x + visible_width:
+                        scroll_pos_x = cursor_x - visible_width + 1
+
+            #ENTER
+            if key == 10:
+                if suggestion_on == True:
+                    query = apply_autocomplete(
+                            mode, query, text, cursor_y, cursor_x, suggestion, prefix
+                        )
+                    # Update matches after autocomplete
+                    find_matches, find_visible_matches = find_and_highlight(
+                        text, query, cursor_y, cursor_x, scroll_pos_y, visible_height
+                    )
+                    # Find and move to next match
+                    next_match_pos = find_next_match(find_matches, cursor_y, cursor_x)
+                    if next_match_pos:
+                        cursor_y, cursor_x = next_match_pos
+                        current_match_pos = (cursor_y, cursor_x)
+                        for match in find_matches:
+                            if match[0] == cursor_y and match[1] == cursor_x:
+                                current_match_range = match
+                                break
 
             #TAB
             if key == 9:
-                cursor_y, cursor_x = next_match(matches, cursor_y, cursor_x)
-                scroll_pos_y = cursor_y - int(visible_height / 2)
-                if scroll_pos_y > len(text):
-                    scroll_pos_y = cursor_y
-                elif scroll_pos_y < 0:
-                    scroll_pos_y = cursor_y
+                if find_matches:
+                    cursor_y, cursor_x = next_match(find_matches, cursor_y, cursor_x)
+                    scroll_pos_y = cursor_y - int(visible_height / 2)
+                    if scroll_pos_y > len(text):
+                        scroll_pos_y = cursor_y
+                    elif scroll_pos_y < 0:
+                        scroll_pos_y = cursor_y
+                    scroll_pos_x = 0
 
-                scroll_pos_x =  0
+                    # Update current match position and range
+                    current_match_pos = (cursor_y, cursor_x)
+                    for match in find_matches:
+                        if match[0] == cursor_y and match[1] == cursor_x:
+                            current_match_range = match
+                            break
+
             #BTAB
-            elif key ==  curses.KEY_BTAB:
-                cursor_y, cursor_x = last_match(matches, cursor_y, cursor_x)
-                scroll_pos_y = cursor_y - int(visible_height / 2)
-                if scroll_pos_y > len(text):
-                    scroll_pos_y = cursor_y
-                elif scroll_pos_y < 0:
-                    scroll_pos_y = cursor_y
+            elif key == curses.KEY_BTAB:  # Using KEY_BTAB constant
+                if find_matches:
+                    cursor_y, cursor_x = last_match(find_matches, cursor_y, cursor_x)
+                    scroll_pos_y = cursor_y - int(visible_height / 2)
+                    if scroll_pos_y > len(text):
+                        scroll_pos_y = cursor_y
+                    elif scroll_pos_y < 0:
+                        scroll_pos_y = cursor_y
+                    scroll_pos_x = 0
 
-                scroll_pos_x =  0
+                    # Update current match position and range
+                    current_match_pos = (cursor_y, cursor_x)
+                    for match in find_matches:
+                        if match[0] == cursor_y and match[1] == cursor_x:
+                            current_match_range = match
+                            break
 
             #LETTERS
             if 32 <= key <= 126:
                 query = query + chr(key)
+                # Find next match from current cursor position after updating query
+                find_matches, find_visible_matches = find_and_highlight(
+                    text, query, cursor_y, cursor_x, scroll_pos_y, visible_height
+                )
+                next_match_pos = find_next_match(find_matches, cursor_y, cursor_x)
+                if next_match_pos:
+                    current_match_pos = next_match_pos
+                    for match in find_matches:
+                        if match[0] == next_match_pos[0] and match[1] == next_match_pos[1]:
+                            current_match_range = match
+                            break
+                    # Move cursor to the match position
+                    cursor_y, cursor_x = current_match_pos
+
+                    # Adjust scroll to make the match visible
+                    if cursor_y < scroll_pos_y:
+                        scroll_pos_y = cursor_y
+                    elif cursor_y >= scroll_pos_y + visible_height:
+                        scroll_pos_y = cursor_y - visible_height + 1
+
+                    if cursor_x < scroll_pos_x:
+                        scroll_pos_x = cursor_x
+                    elif cursor_x >= scroll_pos_x + visible_width:
+                        scroll_pos_x = cursor_x - visible_width + 1
 
             #BACKSPACE
             if key == curses.KEY_BACKSPACE or key == 127:
                 query = query[:-1]
+                # Find next match from current cursor position after updating query
+                find_matches, find_visible_matches = find_and_highlight(
+                    text, query, cursor_y, cursor_x, scroll_pos_y, visible_height
+                )
+                next_match_pos = find_next_match(find_matches, cursor_y, cursor_x)
+                if next_match_pos:
+                    current_match_pos = next_match_pos
+                    for match in find_matches:
+                        if match[0] == next_match_pos[0] and match[1] == next_match_pos[1]:
+                            current_match_range = match
+                            break
+                    # Move cursor to the match position
+                    cursor_y, cursor_x = current_match_pos
+
+                    # Adjust scroll to make the match visible
+                    if cursor_y < scroll_pos_y:
+                        scroll_pos_y = cursor_y
+                    elif cursor_y >= scroll_pos_y + visible_height:
+                        scroll_pos_y = cursor_y - visible_height + 1
+
+                    if cursor_x < scroll_pos_x:
+                        scroll_pos_x = cursor_x
+                    elif cursor_x >= scroll_pos_x + visible_width:
+                        scroll_pos_x = cursor_x - visible_width + 1
 
     # NORMAL MODE
         elif mode == "normal":
@@ -849,7 +1102,14 @@ def editior(stdscr, filename):
 
             #p,P: Paste
             elif key == 112: #p: paste at cursor
-                save_undo_state(undo_stack, text, cursor_x, cursor_y)
+                save_undo_state(
+                    undo_stack,
+                    text,
+                    cursor_x,
+                    cursor_y,
+                    scroll_pos_x,
+                    scroll_pos_y
+                )
                 redo_stack.clear()
 
                 paste = paste_from_clipboard()
@@ -857,16 +1117,62 @@ def editior(stdscr, filename):
                 select_mode = False
 
             elif key == 80: #P: Paste whole line
-                save_undo_state(undo_stack, text, cursor_x, cursor_y)
+                save_undo_state(
+                    undo_stack,
+                    text,
+                    cursor_x,
+                    cursor_y,
+                    scroll_pos_x,
+                    scroll_pos_y
+                )
                 redo_stack.clear()
                 paste = paste_from_clipboard()
                 cursor_y, cursor_x = insert_paste(text, cursor_y, cursor_x, paste)
                 select_mode = False
+            #CUT
+            elif key == 120:  #c
+                save_undo_state(
+                    undo_stack,
+                    text,
+                    cursor_x,
+                    cursor_y,
+                    scroll_pos_x,
+                    scroll_pos_y
+                )
+                redo_stack.clear()
+
+                if select_mode:
+                    selected = get_selected_text(
+                        text,
+                        select_start_y,
+                        select_start_x,
+                        cursor_y,
+                        cursor_x
+                    )
+                    copy_to_clipboard(selected)
+
+                    cursor_y, cursor_x = delete_selection(
+                        text,
+                        select_start_y,
+                        select_start_x,
+                        cursor_y,
+                        cursor_x
+                    )
+
+                    select_mode = False
+
 
 #LOCATORS
             #l: line select
             elif key == 108:
-                save_undo_state(undo_stack, text, cursor_x, cursor_y)
+                save_undo_state(
+                    undo_stack,
+                    text,
+                    cursor_x,
+                    cursor_y,
+                    scroll_pos_x,
+                    scroll_pos_y
+                )
                 redo_stack.clear()
                 line = text[cursor_y]
 
@@ -877,7 +1183,14 @@ def editior(stdscr, filename):
 
             #b: block select
             elif key == 98:
-                save_undo_state(undo_stack, text, cursor_x, cursor_y)
+                save_undo_state(
+                    undo_stack,
+                    text,
+                    cursor_x,
+                    cursor_y,
+                    scroll_pos_x,
+                    scroll_pos_y
+                )
                 redo_stack.clear()
                 line = text[cursor_y]
 
@@ -916,7 +1229,14 @@ def editior(stdscr, filename):
 
             #w: word
             elif key == 119:
-                save_undo_state(undo_stack, text, cursor_x, cursor_y)
+                save_undo_state(
+                    undo_stack,
+                    text,
+                    cursor_x,
+                    cursor_y,
+                    scroll_pos_x,
+                    scroll_pos_y
+                )
                 redo_stack.clear()
 
                 select_mode = True
@@ -928,7 +1248,14 @@ def editior(stdscr, filename):
 
             #a: All
             elif key == 97:
-                save_undo_state(undo_stack, text, cursor_x, cursor_y)
+                save_undo_state(
+                    undo_stack,
+                    text,
+                    cursor_x,
+                    cursor_y,
+                    scroll_pos_x,
+                    scroll_pos_y
+                )
                 redo_stack.clear()
 
                 select_mode = True
@@ -943,11 +1270,18 @@ def editior(stdscr, filename):
 
 
 
-    # ANY MODE BUT FIND
+    #ANY MODE BUT FIND
         if not mode == "find":
         #BACKSPACE
             if key == curses.KEY_BACKSPACE or key == 127:
-                save_undo_state(undo_stack, text, cursor_x, cursor_y)
+                save_undo_state(
+                    undo_stack,
+                    text,
+                    cursor_x,
+                    cursor_y,
+                    scroll_pos_x,
+                    scroll_pos_y
+                )
                 redo_stack.clear()
 
                 if select_mode:
@@ -986,7 +1320,14 @@ def editior(stdscr, filename):
 
 
             elif key == curses.KEY_DC: #DEL
-                save_undo_state(undo_stack, text, cursor_x, cursor_y)
+                save_undo_state(
+                    undo_stack,
+                    text,
+                    cursor_x,
+                    cursor_y,
+                    scroll_pos_x,
+                    scroll_pos_y
+                )
                 redo_stack.clear()
                 if select_mode:
                     cursor_y, cursor_x = delete_selection(
@@ -1008,13 +1349,16 @@ def editior(stdscr, filename):
                         del text[cursor_y + 1]
             #TAB/BTAB
             elif key == 9: #TAB
-                save_undo_state(undo_stack, text, cursor_x, cursor_y)
+                save_undo_state(
+                    undo_stack,
+                    text,
+                    cursor_x,
+                    cursor_y,
+                    scroll_pos_x,
+                    scroll_pos_y
+                )
                 redo_stack.clear()
-                if suggestion_on == True:
-                    cursor_x = apply_autocomplete(
-                        text, cursor_y, cursor_x, suggestion, prefix
-                    )
-                elif select_mode:
+                if select_mode:
                     indent_selection(text, select_start_y, cursor_y)
                     cursor_x += 4
                 else:
@@ -1032,7 +1376,14 @@ def editior(stdscr, filename):
                     cursor_x += spaces_to_add
 
             elif key == curses.KEY_BTAB:
-                save_undo_state(undo_stack, text, cursor_x, cursor_y)
+                save_undo_state(
+                    undo_stack,
+                    text,
+                    cursor_x,
+                    cursor_y,
+                    scroll_pos_x,
+                    scroll_pos_y
+                )
                 redo_stack.clear()
                 line = text[cursor_y]
                 spaces_to_remove = 0
@@ -1065,9 +1416,21 @@ def editior(stdscr, filename):
 
             elif key == curses.KEY_ENTER or key == 10:
                 if not mode == "find":
-                    save_undo_state(undo_stack, text, cursor_x, cursor_y)
+                    save_undo_state(
+                        undo_stack,
+                        text,
+                        cursor_x,
+                        cursor_y,
+                        scroll_pos_x,
+                        scroll_pos_y
+                    )
                     redo_stack.clear()
-                    if cursor_x == 0:
+                    if suggestion_on == True:
+                        cursor_x = apply_autocomplete(
+                            mode, query, text, cursor_y, cursor_x, suggestion, prefix
+                        )
+
+                    elif cursor_x == 0:
                         # insert new line with indent + remaining text
                         text.insert(cursor_y,"")
 
@@ -1101,151 +1464,223 @@ def editior(stdscr, filename):
                         scroll_pos_y = cursor_y - visible_height + 1
 
 
-            elif key == curses.KEY_LEFT:
-                if cursor_x > 0:
-                    cursor_x -= 1
-                    stored_cursor_pos_x = cursor_x
 
-                    if cursor_x < scroll_pos_x:
-                        scroll_pos_x = cursor_x
-                    elif cursor_x >= scroll_pos_x + visible_width:
-                        scroll_pos_x = cursor_x - visible_width + 1
-            elif key == curses.KEY_RIGHT:
-                if cursor_x < line_length:
-                    cursor_x += 1
-                    stored_cursor_pos_x = cursor_x
+    #ANY MODE
+        if key == 27: # ESC
+            mode = "normal"
+            select_mode = False
 
-                    if cursor_x < scroll_pos_x:
-                        scroll_pos_x = cursor_x
-                    elif cursor_x >= scroll_pos_x + visible_width:
-                        scroll_pos_x = cursor_x - visible_width + 1
-            elif key == curses.KEY_UP:
-                if suggestion_on == True:
-                    visible_count = min(suggestions_shown, len(suggestion_list))
-                    if suggestion_sel > 0:
-                        suggestion_sel -= 1
-                    else:
-                        suggestion_sel = visible_count - 1
+        elif key == curses.KEY_LEFT:
+            if mode == "find":
+                mode = "normal"
+            if cursor_x > 0:
+                cursor_x -= 1
+                stored_cursor_pos_x = cursor_x
+
+                if cursor_x < scroll_pos_x:
+                    scroll_pos_x = cursor_x
+                elif cursor_x >= scroll_pos_x + visible_width:
+                    scroll_pos_x = cursor_x - visible_width + 1
+        elif key == curses.KEY_RIGHT:
+            if mode == "find":
+                mode = "normal"
+            if cursor_x < line_length:
+                cursor_x += 1
+                stored_cursor_pos_x = cursor_x
+
+                if cursor_x < scroll_pos_x:
+                    scroll_pos_x = cursor_x
+                elif cursor_x >= scroll_pos_x + visible_width:
+                    scroll_pos_x = cursor_x - visible_width + 1
+        elif key == curses.KEY_UP:
+            if mode == "find" and not can_autocomplete(text, cursor_y, cursor_x, mode, nav_key_last, prefix):
+                mode = "normal"
+            if suggestion_on == True:
+                visible_count = min(suggestions_shown, len(suggestion_list))
+                if suggestion_sel > 0:
+                    suggestion_sel -= 1
                 else:
-                    if cursor_y > 0:
-                        cursor_y -= 1
-                        line_length = len(text[cursor_y])
-                        cursor_x = min(stored_cursor_pos_x, line_length)
-
-                        if cursor_y < scroll_pos_y:
-                            scroll_pos_y = cursor_y
-                        elif cursor_y >= scroll_pos_y + visible_height:
-                            scroll_pos_y = cursor_y - visible_height + 1
-
-            elif key == curses.KEY_DOWN:
-                if suggestion_on == True:
-                    visible_count = min(suggestions_shown, len(suggestion_list))
-                    if suggestion_sel < visible_count - 1:
-                        suggestion_sel += 1
-                    else:
-                        suggestion_sel = 0
-                else:
-                    if cursor_y < len(text)-1:
-                        cursor_y += 1
-                        line_length = len(text[cursor_y])
-                        cursor_x = min(stored_cursor_pos_x, line_length)
+                    suggestion_sel = visible_count - 1
+            else:
+                if cursor_y > 0:
+                    cursor_y -= 1
+                    line_length = len(text[cursor_y])
+                    cursor_x = min(stored_cursor_pos_x, line_length)
 
                     if cursor_y < scroll_pos_y:
                         scroll_pos_y = cursor_y
                     elif cursor_y >= scroll_pos_y + visible_height:
                         scroll_pos_y = cursor_y - visible_height + 1
 
-            # Ctrl+U → Undo
-            elif key == 21:
-                text, cursor_x, cursor_y = perform_undo(
-                    undo_stack,
-                    redo_stack,
-                    text,
-                    cursor_x,
-                    cursor_y
-                )
-                scroll_pos_y = cursor_y
-                status_message = "Undo"
-                status_time = time.time()
-                select_mode = False
-
-            # Ctrl+Y → Redo
-            elif key == 25:
-                text, cursor_x, cursor_y = perform_redo(
-                    undo_stack,
-                    redo_stack,
-                    text,
-                    cursor_x,
-                    cursor_y
-                )
-                status_message = "Redo"
-                status_time = time.time()
-                select_mode = False
-
-
-            #PGUP / PGDN
-            elif key == 339: #pg up
-                half = height // 2
-
-                scroll_pos_y = max(0, scroll_pos_y - half)
-
-                cursor_y = max(
-                    scroll_pos_y,
-                    min(cursor_y - half, scroll_pos_y + height - 1)
-                )
-
-            elif key == 338: #pgdn
-                half = visible_height // 2
-                cursor_y_relivive_pos = cursor_y - scroll_pos_y
-                cursor_y = min(len(text) - 1, cursor_y + half)
-                scroll_pos_y = cursor_y - cursor_y_relivive_pos
-
-
-
-            #SAVE
-            elif key == 19: #ctrl + s
-                if filename:
-                        save_file(filename, text)
-                        saved_text_for_check = text.copy()
-                        dis_filename = format_display_filename(filename)
-                        status_message = f"Saved {dis_filename}"
-                        status_time = time.time()
-                        mode = "normal"
-                        select_mode = False
-            #PASTE
-            elif key == 16: # Ctrl+P example
-                    save_undo_state(undo_stack, text, cursor_x, cursor_y)
-                    redo_stack.clear()
-
-                    paste = paste_from_clipboard()
-                    cursor_y, cursor_x = insert_paste(text, cursor_y, cursor_x, paste)
-            #COPY
-            elif key == 3:  # Ctrl+C
-                if select_mode:
-                    selected = get_selected_text(
-                        text,
-                        select_start_y,
-                        select_start_x,
-                        cursor_y,
-                        cursor_x
-                    )
-                    copy_to_clipboard(selected)
-
-            #SELECT
-            elif key == 0:  # Ctrl+Space
-                if select_mode:
-                    mode = "normal"
-                    select_mode = False
+        elif key == curses.KEY_DOWN:
+            if mode == "find" and not can_autocomplete(text, cursor_y, cursor_x, mode, nav_key_last, prefix):
+                mode = "normal"
+            if suggestion_on == True:
+                visible_count = min(suggestions_shown, len(suggestion_list))
+                if suggestion_sel < visible_count - 1:
+                    suggestion_sel += 1
                 else:
-                    mode = "normal"
-                    select_mode = True
-                    select_start_y = cursor_y
-                    select_start_x = cursor_x
-    #ANY MODE
-        if key == 27: # ESC
-            mode = "normal"
+                    suggestion_sel = 0
+            else:
+                if cursor_y < len(text)-1:
+                    cursor_y += 1
+                    line_length = len(text[cursor_y])
+                    cursor_x = min(stored_cursor_pos_x, line_length)
+
+                if cursor_y < scroll_pos_y:
+                    scroll_pos_y = cursor_y
+                elif cursor_y >= scroll_pos_y + visible_height:
+                    scroll_pos_y = cursor_y - visible_height + 1
+
+        # Ctrl+U → Undo
+        elif key == 21:
+            if mode == "find":
+                mode = "normal"
+            text, cursor_x, cursor_y, scroll_pos_x, scroll_pos_y = perform_undo(
+                undo_stack,
+                redo_stack,
+                text,
+                cursor_x,
+                cursor_y,
+                scroll_pos_x,
+                scroll_pos_y
+            )
+
+            status_message = "Undo"
+            status_time = time.time()
             select_mode = False
 
+        # Ctrl+r (Redo)
+        elif key == 18:
+            if mode == "find":
+                mode = "normal"
+            text, cursor_x, cursor_y, scroll_pos_x, scroll_pos_y = perform_redo(
+                undo_stack,
+                redo_stack,
+                text,
+                cursor_x,
+                cursor_y,
+                scroll_pos_x,
+                scroll_pos_y
+            )
+
+            status_message = "Redo"
+            status_time = time.time()
+            select_mode = False
+
+
+        #PGUP / PGDN
+        elif key == 339: #pg up
+            if mode == "find":
+                mode = "normal"
+            half = height // 2
+
+            scroll_pos_y = max(0, scroll_pos_y - half)
+
+            cursor_y = max(
+                scroll_pos_y,
+                min(cursor_y - half, scroll_pos_y + height - 1)
+            )
+
+        elif key == 338: #pgdn
+            if mode == "find":
+                mode = "normal"
+            half = visible_height // 2
+            cursor_y_relivive_pos = cursor_y - scroll_pos_y
+            cursor_y = min(len(text) - 1, cursor_y + half)
+            scroll_pos_y = cursor_y - cursor_y_relivive_pos
+
+
+
+        #SAVE
+        elif key == 19: #ctrl + s
+            if filename:
+                    save_file(filename, text)
+                    saved_text_for_check = text.copy()
+                    dis_filename = format_display_filename(filename)
+                    status_message = f"Saved {dis_filename}"
+                    status_time = time.time()
+                    mode = "normal"
+                    select_mode = False
+        #PASTE
+        elif key == 16: # Ctrl+P example
+            if mode == "find":
+                mode = "normal"
+            save_undo_state(
+                undo_stack,
+                text,
+                cursor_x,
+                cursor_y,
+                scroll_pos_x,
+                scroll_pos_y
+            )
+            redo_stack.clear()
+
+            paste = paste_from_clipboard()
+            cursor_y, cursor_x = insert_paste(text, cursor_y, cursor_x, paste)
+            select_mode = False
+
+        #YANK
+        elif key == 25:  # Ctrl+Y
+            if mode == "find":
+                mode = "normal"
+            if select_mode:
+                selected = get_selected_text(
+                    text,
+                    select_start_y,
+                    select_start_x,
+                    cursor_y,
+                    cursor_x
+                )
+                copy_to_clipboard(selected)
+
+        #CUT
+        elif key == 24:  # Ctrl+x
+            if mode == "find":
+                mode = "normal"
+            if select_mode:
+                save_undo_state(
+                    undo_stack,
+                    text,
+                    cursor_x,
+                    cursor_y,
+                    scroll_pos_x,
+                    scroll_pos_y
+                )
+                redo_stack.clear()
+
+                selected = get_selected_text(
+                    text,
+                    select_start_y,
+                    select_start_x,
+                    cursor_y,
+                    cursor_x
+                )
+                copy_to_clipboard(selected)
+
+                cursor_y, cursor_x = delete_selection(
+                    text,
+                    select_start_y,
+                    select_start_x,
+                    cursor_y,
+                    cursor_x
+                )
+
+                select_mode = False
+
+
+        #SELECT
+        elif key == 0:  # Ctrl+Space
+            if mode == "find":
+                mode = "normal"
+            if select_mode:
+                mode = "normal"
+                select_mode = False
+            else:
+                mode = "normal"
+                select_mode = True
+                select_start_y = cursor_y
+                select_start_x = cursor_x
         #QUIT
         elif key == 17: #ctrl + q
             break
