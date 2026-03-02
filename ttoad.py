@@ -1412,7 +1412,12 @@ def editior(stdscr, filename):
                 cursor_x = len(line)
 
             elif key == curses.KEY_HOME:
-                cursor_x = 0
+                line = text[cursor_y]
+                front_line = len(line) - len(line.lstrip())
+                if cursor_x <= front_line:
+                    cursor_x = 0
+                else:
+                    cursor_x = front_line
 
             elif key == curses.KEY_ENTER or key == 10:
                 if not mode == "find":

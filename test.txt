@@ -7,7 +7,6 @@ CURRENT-------------------
 MAJOR---------------------
 
 MINOR---------------------
-- home should bring to the frount of the text in line
 - auto both (), "", {}. [], ''
 - cant scroll to the edge of the doc (right)
 
@@ -52,6 +51,10 @@ Extras:
 
 
 ----------DONE------------
+- home brings to the front of the text in line
+
+--------PREVIOUS----------
+! up and down now exits find when not autocomplete list
 ! undo and redo should store scroll pos
 ! paste crash bug
 - any of the ctrl actions should pull you from find
@@ -62,8 +65,6 @@ Extras:
 - find has autocomplete that inserts with enter
 - autocomplete inserts with enter
 - can scroll through autocomplete when in find now
-
---------PREVIOUS----------
 - block sel fixed ignores # when selecting
 - when find word cursor should jump to location
 - reintroduceed 50ms updatng so find text would not wait for next key press
