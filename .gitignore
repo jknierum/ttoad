@@ -1,0 +1,59 @@
+# Build artifacts from makepkg
+src/
+pkg/
+*.pkg.tar.zst
+*.tar.gz
+*.tar.zst
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+*.egg
+dist/
+build/
+
+# Virtual environments
+venv/
+.venv/
+env/
+.env/
+
+# Editor files
+*.swp
+*.swo
+*~
+.DS_Store
+*.bak
+
+# IDE files
+.vscode/
+.idea/
+*.code-workspace
+
+# Local testing files
+test.txt
+*.test
+tmp/
+
+# Logs
+*.log
+
+# Git
+*.orig
+*.BACKUP
+*.base
+*.local
+
+# If you have any secrets or configs
+*.secret
+*.key
+config.local.json
+
+# Don't ignore these important files
+!README.md
+!PKGBUILD
+!LICENSE
