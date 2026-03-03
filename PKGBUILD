@@ -1,38 +1,71 @@
-# PKGBUILD
-# Maintainer: Your Name <jknierum@gmail.com>
-
-pkgname=ttoad-git  # Note the -git suffix for VCS packages
-pkgver=1.0.0
-pkgrel=1
-pkgdesc="Ttoad: a Tiny terminal model code editor (git version)"
+# PKGBUILD - Fixed version
+pkgname=ttoad-git
+pkgver=1.0.0.r0.gddb5a08
+pkgrel=4
+pkgdesc="Ttoad: a Tiny terminal model code editor"
 arch=('any')
 url="https://github.com/jknierum/ttoad"
 license=('MIT')
 depends=('python' 'wl-clipboard')
-makedepends=('git')
-# Git source
+makedepends=('git' 'python-setuptools')
 source=("git+https://github.com/jknierum/ttoad.git")
-sha256sums=('SKIP')  # Git sources don't have checksums
+sha256sums=('SKIP')
 
-pkgver() {
+prepare() {
   cd "$srcdir/ttoad"
-  git describe --long --tags | sed 's/^v//;s/\([^-]*-g\)/r\1/;s/-/./g'
+
+  # Create proper Python package structure
+  mkdir -p ttoad
+
+  # Move main file to __main__.py
+  cp ttoad.py ttoad/__main__.py
+
+  # Create __init__.py
+  cat > ttoad/__init__.py << 'EOF'
+"""Ttoad editor package"""
+import sys
+from .__main__ import main
+
+if __name__ == "__main__":
+    sys.exit(main())
+EOF
+
+  # Copy syntax module into the package
+  if [ -d "syntax" ]; then
+    cp -r syntax ttoad/
+    # Ensure __init__.py exists in syntax
+    touch ttoad/syntax/__init__.py
+  fi
+
+  # Create setup.py
+  cat > setup.py << 'EOF'
+from setuptools import setup, find_packages
+
+setup(
+    name="ttoad",
+    version="1.0.0",
+    packages=find_packages(),
+    entry_points={
+        "console_scripts": [
+            "ttoad = ttoad:main",
+        ],
+    },
+)
+EOF
 }
 
 package() {
   cd "$srcdir/ttoad"
 
-  # Get Python version
-  python_version=$(python -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
+  # Install using setuptools
+  python setup.py install --root="$pkgdir" --optimize=1 --skip-build
 
-  # Install main script
-  install -Dm755 ttoad.py "$pkgdir/usr/bin/ttoad"
+  # Verify the module was installed
+  echo "=== Installed files ==="
+  find "$pkgdir" -type f -name "*.py" | sort
+}
 
-  # Install syntax module
-  install -dm755 "$pkgdir/usr/lib/python$python_version/site-packages/syntax"
-  install -Dm644 syntax/__init__.py "$pkgdir/usr/lib/python$python_version/site-packages/syntax/__init__.py"
-  install -Dm644 syntax/engine.py "$pkgdir/usr/lib/python$python_version/site-packages/syntax/engine.py"
-
-  # Install docs if they exist
-  [ -f README.md ] && install -Dm644 README.md "$pkgdir/usr/share/doc/$pkgname/README.md"
+post_install() {
+  echo "Ttoad has been installed successfully!"
+  echo "Run 'ttoad' to start editing"
 }
