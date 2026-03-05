@@ -681,7 +681,8 @@ def editior(stdscr, filename):
     while True:
         stdscr.clear()
         current_time = datetime.now().strftime("%H:%M:%S")
-        line_length = len(text[cursor_y])
+        if line:
+            line_length = len(text[cursor_y])
         height, width = stdscr.getmaxyx()
         suggestion_on = False
         screen_y = cursor_y - scroll_pos_y
