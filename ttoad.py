@@ -640,6 +640,8 @@ def editior(stdscr, filename):
     cursor_y = 0
     cursor_x =0
 
+    line_length = len(text[cursor_y]) if text else 0
+
     select_mode = False
     select_start_y = 0
     select_start_x = 0
@@ -695,6 +697,8 @@ def editior(stdscr, filename):
         current_time = datetime.now().strftime("%H:%M:%S")
         if text:
             line_length = len(text[cursor_y])
+        else:
+            line_length = 0
         height, width = stdscr.getmaxyx()
         suggestion_on = False
         screen_y = cursor_y - scroll_pos_y
