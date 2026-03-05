@@ -32,6 +32,18 @@ args = parser.parse_args()
 
 filename = args.filename
 
+# Ensure we always have at least an empty buffer
+if filename is None:
+    # No filename provided - start with empty buffer
+    text = [""]
+else:
+    try:
+        text = open_file(filename)
+    except Exception as e:
+        # If there's any error opening the file, start with empty buffer
+        text = [""]
+        print(f"Warning: Could not open {filename}, starting with empty buffer: {e}", file=sys.stderr)
+
 
 def load_syntax(filename):
     ext = os.path.splitext(filename)[1]
