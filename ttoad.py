@@ -575,12 +575,14 @@ def last_match(matches, cursor_y, cursor_x):
     if not matches:
         return cursor_y, cursor_x
 
-    # find first match BEFORE cursor
+    # Find first match that ends BEFORE the cursor position
+    # (not just starts before)
     for start_y, start_x, end_y, end_x in reversed(matches):
-        if (start_y, start_x) < (cursor_y, cursor_x):
+        # Check if this match ends before the cursor position
+        if (end_y, end_x) < (cursor_y, cursor_x):
             return start_y, start_x
 
-    # wrap around to last match
+    # If no match ends before cursor, wrap to last match
     return matches[-1][0], matches[-1][1]
 
 def find_and_highlight(text, query, cursor_y, cursor_x, scroll_pos_y, visible_height):
@@ -1007,34 +1009,71 @@ def editior(stdscr, filename):
                     next_match_pos = find_next_match(find_matches, cursor_y, cursor_x)
                     if next_match_pos:
                         cursor_y, cursor_x = next_match_pos
-                        current_match_pos = (cursor_y, cursor_x)
+                        # Find the full match range
                         for match in find_matches:
                             if match[0] == cursor_y and match[1] == cursor_x:
                                 current_match_range = match
+                                # Set selection to cover the entire word
+                                select_mode = True
+                                select_start_y = match[0]
+                                select_start_x = match[1]
+                                # Move cursor to end of the word
+                                cursor_x = match[3]  # end_x
                                 break
 
             #TAB
             if key == 9:
                 if find_matches:
-                    cursor_y, cursor_x = next_match(find_matches, cursor_y, cursor_x)
+                    # Use the start of the current match for navigation
+                    if select_mode and current_match_range:
+                        nav_y, nav_x = current_match_range[0], current_match_range[1]
+                    else:
+                        nav_y, nav_x = cursor_y, cursor_x
+
+                    # Get the next match position
+                    next_pos = next_match(find_matches, nav_y, nav_x)
+                    cursor_y, cursor_x = next_pos
+
+                    # Find the full match range for this position
+                    for match in find_matches:
+                        if match[0] == cursor_y and match[1] == cursor_x:
+                            current_match_range = match
+                            # Set selection to cover the entire word
+                            select_mode = True
+                            select_start_y = match[0]
+                            select_start_x = match[1]
+                            # Move cursor to end of the word
+                            cursor_x = match[3]  # end_x
+                            break
+
+                    # Adjust scroll to make the match visible
                     scroll_pos_y = cursor_y - int(visible_height / 2)
                     if scroll_pos_y > len(text):
                         scroll_pos_y = cursor_y
                     elif scroll_pos_y < 0:
                         scroll_pos_y = cursor_y
                     scroll_pos_x = 0
-
-                    # Update current match position and range
-                    current_match_pos = (cursor_y, cursor_x)
-                    for match in find_matches:
-                        if match[0] == cursor_y and match[1] == cursor_x:
-                            current_match_range = match
-                            break
 
             #BTAB
-            elif key == curses.KEY_BTAB:  # Using KEY_BTAB constant
+            elif key == curses.KEY_BTAB or key == 353:
                 if find_matches:
-                    cursor_y, cursor_x = last_match(find_matches, cursor_y, cursor_x)
+                    # Get the previous match position
+                    prev_pos = last_match(find_matches, cursor_y, cursor_x)
+                    cursor_y, cursor_x = prev_pos
+
+                    # Find the full match range for this position
+                    for match in find_matches:
+                        if match[0] == cursor_y and match[1] == cursor_x:
+                            current_match_range = match
+                            # Set selection to cover the entire word
+                            select_mode = True
+                            select_start_y = match[0]
+                            select_start_x = match[1]
+                            # Move cursor to end of the word
+                            cursor_x = match[3]  # end_x
+                            break
+
+                    # Adjust scroll to make the match visible
                     scroll_pos_y = cursor_y - int(visible_height / 2)
                     if scroll_pos_y > len(text):
                         scroll_pos_y = cursor_y
@@ -1042,15 +1081,9 @@ def editior(stdscr, filename):
                         scroll_pos_y = cursor_y
                     scroll_pos_x = 0
 
-                    # Update current match position and range
-                    current_match_pos = (cursor_y, cursor_x)
-                    for match in find_matches:
-                        if match[0] == cursor_y and match[1] == cursor_x:
-                            current_match_range = match
-                            break
 
             #LETTERS
-            if 32 <= key <= 126:
+            elif 32 <= key <= 126:
                 query = query + chr(key)
                 # Find next match from current cursor position after updating query
                 find_matches, find_visible_matches = find_and_highlight(
@@ -1058,13 +1091,18 @@ def editior(stdscr, filename):
                 )
                 next_match_pos = find_next_match(find_matches, cursor_y, cursor_x)
                 if next_match_pos:
-                    current_match_pos = next_match_pos
+                    cursor_y, cursor_x = next_match_pos
+                    # Find the full match range
                     for match in find_matches:
-                        if match[0] == next_match_pos[0] and match[1] == next_match_pos[1]:
+                        if match[0] == cursor_y and match[1] == cursor_x:
                             current_match_range = match
+                            # Set selection to cover the entire word
+                            select_mode = True
+                            select_start_y = match[0]
+                            select_start_x = match[1]
+                            # Move cursor to end of the word
+                            cursor_x = match[3]  # end_x
                             break
-                    # Move cursor to the match position
-                    cursor_y, cursor_x = current_match_pos
 
                     # Adjust scroll to make the match visible
                     if cursor_y < scroll_pos_y:
@@ -1078,7 +1116,7 @@ def editior(stdscr, filename):
                         scroll_pos_x = cursor_x - visible_width + 1
 
             #BACKSPACE
-            if key == curses.KEY_BACKSPACE or key == 127:
+            elif key == curses.KEY_BACKSPACE or key == 127:
                 query = query[:-1]
                 # Find next match from current cursor position after updating query
                 find_matches, find_visible_matches = find_and_highlight(
@@ -1086,13 +1124,18 @@ def editior(stdscr, filename):
                 )
                 next_match_pos = find_next_match(find_matches, cursor_y, cursor_x)
                 if next_match_pos:
-                    current_match_pos = next_match_pos
+                    cursor_y, cursor_x = next_match_pos
+                    # Find the full match range
                     for match in find_matches:
-                        if match[0] == next_match_pos[0] and match[1] == next_match_pos[1]:
+                        if match[0] == cursor_y and match[1] == cursor_x:
                             current_match_range = match
+                            # Set selection to cover the entire word
+                            select_mode = True
+                            select_start_y = match[0]
+                            select_start_x = match[1]
+                            # Move cursor to end of the word
+                            cursor_x = match[3]  # end_x
                             break
-                    # Move cursor to the match position
-                    cursor_y, cursor_x = current_match_pos
 
                     # Adjust scroll to make the match visible
                     if cursor_y < scroll_pos_y:
@@ -1104,6 +1147,7 @@ def editior(stdscr, filename):
                         scroll_pos_x = cursor_x
                     elif cursor_x >= scroll_pos_x + visible_width:
                         scroll_pos_x = cursor_x - visible_width + 1
+
 
     # NORMAL MODE
         elif mode == "normal":
@@ -1502,9 +1546,11 @@ def editior(stdscr, filename):
 
     #ANY MODE
         if key == 27: # ESC
+            if not mode == "find":
+                select_mode = False
+            else:
+                select_mode = True
             mode = "normal"
-            select_mode = False
-
         elif key == curses.KEY_LEFT:
             if mode == "find":
                 mode = "normal"
