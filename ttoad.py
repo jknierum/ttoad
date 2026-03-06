@@ -1,4 +1,3 @@
-#test
 import curses
 import sys
 import time
@@ -33,6 +32,21 @@ args = parser.parse_args()
 
 filename = args.filename
 
+def open_file(filename):
+    text = []
+    try:
+        with open(filename, "r") as f:
+            for line in f:
+                text.append(line.rstrip("\n"))  # remove newline
+    except FileNotFoundError:
+        text = [""]  # start with empty text if file doesn’t exist
+    return text
+
+
+if not filename:
+    print("Enter a filename to create or edit a file.")
+    exit()
+
 # Ensure we always have at least an empty buffer
 if filename is None:
     # No filename provided - start with empty buffer
@@ -58,15 +72,6 @@ os.system("stty -ixon")
 
 filename = args.filename
 
-def open_file(filename):
-    text = []
-    try:
-        with open(filename, "r") as f:
-            for line in f:
-                text.append(line.rstrip("\n"))  # remove newline
-    except FileNotFoundError:
-        text = [""]  # start with empty text if file doesn’t exist
-    return text
 
 def save_file(filename, text):
     for i, line in enumerate(text):
@@ -615,6 +620,7 @@ def editior(stdscr, filename):
     status_time = 0
     curses.curs_set(1)
 
+
     curses.start_color()  # Enable color mode
     curses.use_default_colors()  # Optional: let terminal default background show
 
@@ -632,6 +638,9 @@ def editior(stdscr, filename):
         text = open_file(filename)
     else:
         text = [""]
+
+    saved_text_for_check = text.copy()
+
 
     # Create syntax highlighter
     ext = os.path.splitext(filename)[1] if filename else ""
@@ -694,6 +703,7 @@ def editior(stdscr, filename):
         return count // tab_size
 
     while True:
+
         stdscr.clear()
         current_time = datetime.now().strftime("%H:%M:%S")
         if text:
@@ -1627,6 +1637,60 @@ def editior(stdscr, filename):
                     status_time = time.time()
                     mode = "normal"
                     select_mode = False
+
+        # SAVE AS - Ctrl+A
+        elif key == 1:  # Ctrl+A
+            # Clear status area and show save prompt
+            stdscr.move(height - 2, left_margin + len(mode_dis) + 3)
+            stdscr.clrtoeol()
+            stdscr.addstr(height - 2, left_margin + len(mode_dis) + 3, "Save as: ", curses.color_pair(1))
+            stdscr.refresh()
+
+            # Enter a mini input mode for filename
+            filename_input = ""
+            while True:
+                stdscr.move(height - 2, left_margin + len(mode_dis) + 3 + len("Save as: "))
+                stdscr.clrtoeol()
+                stdscr.addstr(height - 2, left_margin + len(mode_dis) + 3 + len("Save as: "),
+                             filename_input, curses.color_pair(1))
+                stdscr.refresh()
+
+                ch = stdscr.getch()
+
+                if ch == 10:  # Enter key - save file
+                    if filename_input.strip():
+                        # Save to new filename
+                        new_filename = filename_input.strip()
+                        try:
+                            save_file(new_filename, text)
+                            filename = new_filename  # Update current filename
+                            saved_text_for_check = text.copy()
+
+                            # Update syntax highlighting for new file extension
+                            ext = os.path.splitext(filename)[1] if filename else ""
+                            rules = SYNTAX_MAP.get(ext, [])
+                            highlighter = SyntaxHighlighter(rules)
+
+                            status_message = f"Saved as {format_display_filename(filename)}"
+                            status_time = time.time()
+                        except Exception as e:
+                            status_message = f"Save failed: {str(e)[:30]}..."
+                            status_time = time.time()
+                    break
+
+                elif ch == 27:  # ESC - cancel
+                    break
+
+                elif ch == 127 or ch == curses.KEY_BACKSPACE:  # Backspace
+                    if filename_input:
+                        filename_input = filename_input[:-1]
+
+                elif 32 <= ch <= 126:  # Printable characters
+                    filename_input += chr(ch)
+
+            mode = "normal"
+            select_mode = False
+
         #PASTE
         elif key == 16: # Ctrl+P example
             if mode == "find":
@@ -1706,10 +1770,9 @@ def editior(stdscr, filename):
                 select_mode = True
                 select_start_y = cursor_y
                 select_start_x = cursor_x
-        #QUIT
-        elif key == 17: #ctrl + q
-            break
 
+        elif key == 17:
+            exit()
 
         #status_time = time.time()
         current_time = time.time()
