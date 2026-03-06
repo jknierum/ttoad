@@ -1152,9 +1152,30 @@ def editior(stdscr, filename):
     # NORMAL MODE
         elif mode == "normal":
             #ESC
-            if key == 31 or key == 105:
+            if  key == 105:
+                if  select_mode:
+                    save_undo_state(
+                        undo_stack,
+                        text,
+                        cursor_x,
+                        cursor_y,
+                        scroll_pos_x,
+                        scroll_pos_y
+                    )
+
+                    redo_stack.clear()
+
+                    cursor_y, cursor_x = delete_selection(
+                            text,
+                            select_start_y,
+                            select_start_x,
+                            cursor_y,
+                            cursor_x
+                    )
+
                 mode = "insert"
                 select_mode = False
+
             #y,Y
             elif key == 121: #y: yank word
 
@@ -1186,23 +1207,20 @@ def editior(stdscr, filename):
                 )
                 redo_stack.clear()
 
+
+                if  select_mode:
+                    cursor_y, cursor_x = delete_selection(
+                            text,
+                            select_start_y,
+                            select_start_x,
+                            cursor_y,
+                            cursor_x
+                        )
+
                 paste = paste_from_clipboard()
                 cursor_y, cursor_x = insert_paste(text, cursor_y, cursor_x, paste)
                 select_mode = False
 
-            elif key == 80: #P: Paste whole line
-                save_undo_state(
-                    undo_stack,
-                    text,
-                    cursor_x,
-                    cursor_y,
-                    scroll_pos_x,
-                    scroll_pos_y
-                )
-                redo_stack.clear()
-                paste = paste_from_clipboard()
-                cursor_y, cursor_x = insert_paste(text, cursor_y, cursor_x, paste)
-                select_mode = False
             #CUT
             elif key == 120:  #c
                 save_undo_state(
@@ -1342,6 +1360,10 @@ def editior(stdscr, filename):
             elif key == 102:
                 mode = "find"
 
+            elif key == 70:
+                query = ""
+                select_mode = False
+                mode = "find"
 
 
     #ANY MODE BUT FIND
@@ -1740,20 +1762,45 @@ def editior(stdscr, filename):
         #PASTE
         elif key == 16: # Ctrl+P example
             if mode == "find":
-                mode = "normal"
-            save_undo_state(
-                undo_stack,
-                text,
-                cursor_x,
-                cursor_y,
-                scroll_pos_x,
-                scroll_pos_y
-            )
-            redo_stack.clear()
+                paste = paste_from_clipboard()
+                query = query + paste
+            elif  select_mode:
+                save_undo_state(
+                    undo_stack,
+                    text,
+                    cursor_x,
+                    cursor_y,
+                    scroll_pos_x,
+                    scroll_pos_y
+                )
+                redo_stack.clear()
 
-            paste = paste_from_clipboard()
-            cursor_y, cursor_x = insert_paste(text, cursor_y, cursor_x, paste)
-            select_mode = False
+
+                cursor_y, cursor_x = delete_selection(
+                        text,
+                        select_start_y,
+                        select_start_x,
+                        cursor_y,
+                        cursor_x
+                    )
+                paste = paste_from_clipboard()
+                cursor_y, cursor_x = insert_paste(text, cursor_y, cursor_x, paste)
+                select_mode = False
+
+            else:
+                save_undo_state(
+                    undo_stack,
+                    text,
+                    cursor_x,
+                    cursor_y,
+                    scroll_pos_x,
+                    scroll_pos_y
+                )
+                redo_stack.clear()
+
+                paste = paste_from_clipboard()
+                cursor_y, cursor_x = insert_paste(text, cursor_y, cursor_x, paste)
+                select_mode = False
 
         #YANK
         elif key == 25:  # Ctrl+Y
