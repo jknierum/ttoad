@@ -1571,7 +1571,10 @@ def editior(stdscr, filename):
             if not mode == "find":
                 select_mode = False
             else:
-                select_mode = True
+                if query:
+                    select_mode = True
+                else:
+                    select_mode = False
             mode = "normal"
         elif key == curses.KEY_LEFT:
             if mode == "find":
