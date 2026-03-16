@@ -614,6 +614,17 @@ def find_next_match(matches, cursor_y, cursor_x):
     return (matches[0][0], matches[0][1])
 
 
+def add_before_after_selected(key_before, key_after, text, select_start_x , select_start_y, cursor_x, cursor_y):
+    start_line = text[select_start_y]
+    text[select_start_y] = start_line[:select_start_x] + chr(key_before) + start_line[select_start_x:]
+    select_start_x += 1
+    if select_start_y == cursor_y:
+        cursor_x +=1
+
+    end_line = text[cursor_y]
+    text[cursor_y] = end_line[:cursor_x] + chr(key_after) + end_line[cursor_x:]
+
+
 
 def editior(stdscr, filename):
 #    stdscr.timeout(50)  # refresh every 50ms
@@ -956,6 +967,23 @@ def editior(stdscr, filename):
                 line = text[cursor_y]
                 text[cursor_y] = line[:cursor_x] + chr(key) + line[cursor_x:]
                 cursor_x += 1
+
+                if key in (39, 34):
+                    line = text[cursor_y]
+                    text[cursor_y] = line[:cursor_x] + chr(key) + line[cursor_x:]
+
+                elif key == 91:
+                    line = text[cursor_y]
+                    text[cursor_y] = line[:cursor_x] + chr(93) + line[cursor_x:]
+
+                elif key == 123:
+                    line = text[cursor_y]
+                    text[cursor_y] = line[:cursor_x] + chr(125) + line[cursor_x:]
+
+                elif key == 40:
+                    line = text[cursor_y]
+                    text[cursor_y] = line[:cursor_x] + chr(41) + line[cursor_x:]
+
                 select_mode = False
 
 
@@ -1205,7 +1233,81 @@ def editior(stdscr, filename):
                 select_mode = False
 
 
-    #ACTIONS (delete(d), copy(c)/yank(y), paste(p), paste over line(P), cut(x), jump forword(j), jump back(J), comment(/), tab(t), unTab(T))
+            #ACTIONS (delete(d), copy(c)/yank(y), paste(p), paste over line(P), cut(x), jump forword(j), jump back(J), comment(/), tab(t), unTab(T))
+
+            #(),{},[],'',"" when selected
+            elif key == 91: #[]
+                if select_mode:
+                    save_undo_state(
+                        undo_stack,
+                        text,
+                        cursor_x,
+                        cursor_y,
+                        scroll_pos_x,
+                        scroll_pos_y
+                    )
+
+                    redo_stack.clear()
+
+                    add_before_after_selected(key, 93, text, select_start_x , select_start_y, cursor_x, cursor_y)
+
+                    select_mode = False
+
+
+            elif key == 40: #()
+                if select_mode:
+                    save_undo_state(
+                        undo_stack,
+                        text,
+                        cursor_x,
+                        cursor_y,
+                        scroll_pos_x,
+                        scroll_pos_y
+                    )
+
+                    redo_stack.clear()
+
+                    add_before_after_selected(key, 41, text, select_start_x , select_start_y, cursor_x, cursor_y)
+
+                    select_mode = False
+
+
+            elif key == 123: #{}
+                if select_mode:
+                    save_undo_state(
+                        undo_stack,
+                        text,
+                        cursor_x,
+                        cursor_y,
+                        scroll_pos_x,
+                        scroll_pos_y
+                    )
+
+                    redo_stack.clear()
+
+                    add_before_after_selected(key, 125, text, select_start_x , select_start_y, cursor_x, cursor_y)
+
+                    select_mode = False
+
+
+            elif key in  (39,34): #"",''
+                if select_mode:
+                    save_undo_state(
+                        undo_stack,
+                        text,
+                        cursor_x,
+                        cursor_y,
+                        scroll_pos_x,
+                        scroll_pos_y
+                    )
+
+                    redo_stack.clear()
+
+                    add_before_after_selected(key, key, text, select_start_x , select_start_y, cursor_x, cursor_y)
+
+                    select_mode = False
+
+
             #JUMP j
             elif key == 106:
                 jump_pos = ""
@@ -1342,6 +1444,15 @@ def editior(stdscr, filename):
             #/: comment
             elif key == 47: #: comment block
                 if select_mode:
+                    save_undo_state(
+                        undo_stack,
+                        text,
+                        cursor_x,
+                        cursor_y,
+                        scroll_pos_x,
+                        scroll_pos_y
+                    )
+                    redo_stack.clear()
                     if not select_start_y == cursor_y:
                         line = text[cursor_y]
 
