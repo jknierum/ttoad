@@ -621,7 +621,7 @@ def editior(stdscr, filename):
     status_message = ""
     status_time = 0
     curses.curs_set(1)
-
+    curses.nonl()
 
     curses.start_color()  # Enable color mode
     curses.use_default_colors()  # Optional: let terminal default background show
@@ -733,6 +733,10 @@ def editior(stdscr, filename):
                 status_message = ""
         elif mode == "find":
             stdscr.addstr(1, left_margin, " FIND: " + query + " ", curses.color_pair(tm_colour) | curses.A_BOLD | curses.A_REVERSE)
+
+        elif mode == "jump":
+            stdscr.addstr(1, left_margin, " JUMP: " + jump_pos + " ", curses.color_pair(tm_colour) | curses.A_BOLD | curses.A_REVERSE)
+
         else:
             stdscr.addstr(1, left_margin, " " + dis_filename + " ", curses.color_pair(tm_colour) | curses.A_BOLD | curses.A_REVERSE)
 
@@ -954,6 +958,30 @@ def editior(stdscr, filename):
                 cursor_x += 1
                 select_mode = False
 
+
+    #JUMP TO LINE MODE
+        elif mode == "jump":
+            if 48 <= key <= 57:
+                jump_pos = jump_pos + chr(key)
+
+
+            elif key == curses.KEY_BACKSPACE or key == 127:
+                jump_pos = jump_pos[:-1]
+
+            elif key == 13: #ENTER
+                try:
+                    target = int(jump_pos)-1
+                except ValueError:
+                    target = cursor_y
+                    jump_pos = ""
+
+                cursor_x = 0
+                cursor_y = max(0, min(target, len(text) - 1))
+                scroll_pos_y = max(0, cursor_y - visible_height // 2)
+
+                mode = "normal"
+                continue
+
     #FIND MODE
         elif mode == "find":
             if select_mode:
@@ -996,7 +1024,7 @@ def editior(stdscr, filename):
                         scroll_pos_x = cursor_x - visible_width + 1
 
             #ENTER
-            if key == 10:
+            if key == 13:
                 if suggestion_on == True:
                     query = apply_autocomplete(
                             mode, query, text, cursor_y, cursor_x, suggestion, prefix
@@ -1176,8 +1204,15 @@ def editior(stdscr, filename):
                 mode = "insert"
                 select_mode = False
 
+
+    #ACTIONS (delete(d), copy(c)/yank(y), paste(p), paste over line(P), cut(x), jump forword(j), jump back(J), comment(/), tab(t), unTab(T))
+            #JUMP j
+            elif key == 106:
+                jump_pos = ""
+                mode = "jump"
+
             #y,Y
-            elif key == 121: #y: yank word
+            elif key == 121: #y: yank selected
 
                 if select_mode:
                     selected = get_selected_text(
@@ -1190,10 +1225,6 @@ def editior(stdscr, filename):
                     yanked = selected
                     copy_to_clipboard(selected)
                     select_mode = False
-
-
-    #ACTIONS (delete(d), copy(c)/yank(y), paste(p), paste over line(P), cut(x), jump forword(j), jump back(J), comment(/), tab(t), unTab(T))
-
 
             #p,P: Paste
             elif key == 112: #p: paste at cursor
@@ -1308,16 +1339,43 @@ def editior(stdscr, filename):
 
                 select_mode = False
 
+            #/: comment
             elif key == 47: #: comment block
                 if select_mode:
-                    line = text[cursor_y]
-                    if line.startswith(comment_cha):
-                        for i in range(select_start_y , cursor_y + 1):
-                            text[i] = text[i].lstrip(comment_cha)
+                    if not select_start_y == cursor_y:
+                        line = text[cursor_y]
+
+                        if line.startswith(comment_cha):
+                            for i in range(select_start_y , cursor_y + 1):
+                                text[i] = text[i].lstrip(comment_cha)
+                        else:
+                            for i in range(select_start_y , cursor_y + 1):
+                                text[i] = comment_cha + text[i]
+                        select_mode = False
+
+                    elif select_start_x == 0:
+                        line = text[cursor_y]
+
+                        if line.startswith(comment_cha):
+                            for i in range(select_start_y , cursor_y + 1):
+                                text[i] = text[i].lstrip(comment_cha)
+                        else:
+                            for i in range(select_start_y , cursor_y + 1):
+                                text[i] = comment_cha + text[i]
+                        select_mode = False
+
                     else:
-                        for i in range(select_start_y , cursor_y + 1):
-                            text[i] = comment_cha + text[i]
-                    select_mode = False
+                        line = text[select_start_y]
+                        if line[select_start_x-1] == comment_cha:
+                            text[select_start_y] = line[:select_start_x-1] + line[select_start_x:]
+                            select_start_x -= 1
+                            select_mode = False
+
+                        else:
+                            text[select_start_y] = line[:select_start_x] + comment_cha + line[select_start_x:]
+                            select_start_x += 1
+                            select_mode = False
+
 
             #w: word
             elif key == 119:
@@ -1367,7 +1425,7 @@ def editior(stdscr, filename):
 
 
     #ANY MODE BUT FIND
-        if not mode == "find":
+        if mode not in ("find", "jump"):
         #BACKSPACE
             if key == curses.KEY_BACKSPACE or key == 127:
                 save_undo_state(
@@ -1515,7 +1573,7 @@ def editior(stdscr, filename):
                 else:
                     cursor_x = front_line
 
-            elif key == curses.KEY_ENTER or key == 10:
+            elif key == curses.KEY_ENTER or key == 13:
                 if not mode == "find":
                     save_undo_state(
                         undo_stack,
@@ -1674,6 +1732,10 @@ def editior(stdscr, filename):
             status_time = time.time()
             select_mode = False
 
+        #CTRL + J (JUMP)
+        elif key ==  10:
+            jump_pos = ""
+            mode = "jump"
 
         #PGUP / PGDN
         elif key == 339: #pg up
