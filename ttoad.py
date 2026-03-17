@@ -756,6 +756,7 @@ def editior(stdscr, filename):
         if visible_width < 1:
             visible_width = 1
 
+        mode_dis = mode.upper()
 
         suggestion_on = False
         screen_y = cursor_y - scroll_pos_y
@@ -803,11 +804,6 @@ def editior(stdscr, filename):
         visible_height = height - (top_margin * 2)  # number of lines we can display
         visible_width = width - (left_margin)
 
-        # Ensure we have at least 1 line to display
-        if visible_height < 1:
-            visible_height = 1
-        if visible_width < 1:
-            visible_width = 1
 
        # Calculate how many lines we can actually draw
         max_draw_lines = min(visible_height, len(text) - scroll_pos_y)
@@ -881,7 +877,6 @@ def editior(stdscr, filename):
                 # else: normal text - already handled by syntax highlighter
 
         #MODE DISPLAY
-        mode_dis = mode.upper()
         stdscr.addstr(height - 2, left_margin, " " + mode_dis + " ", curses.color_pair(5) | curses.A_REVERSE | curses.A_BOLD)
 
         #YANKED
@@ -1955,23 +1950,24 @@ def editior(stdscr, filename):
         # SAVE AS - Ctrl+A
         elif key == 1:  # Ctrl+A
             # Clear status area and show save prompt
-            stdscr.move(height - 2, left_margin + len(mode_dis) + 3)
-            stdscr.clrtoeol()
-            stdscr.addstr(height - 2, left_margin + len(mode_dis) + 3, "Save as: ", curses.color_pair(1))
-            stdscr.refresh()
+            status_message = "Save as: "
+            status_time = time.time()
 
             # Enter a mini input mode for filename
             filename_input = ""
-            while True:
-                stdscr.move(height - 2, left_margin + len(mode_dis) + 3 + len("Save as: "))
+            mode = "save_as"  # Temporary mode
+
+            while mode == "save_as":
+                # Show the prompt
+                stdscr.move(height - 2, left_margin + len("SAVE AS") + 3)
                 stdscr.clrtoeol()
-                stdscr.addstr(height - 2, left_margin + len(mode_dis) + 3 + len("Save as: "),
-                             filename_input, curses.color_pair(1))
+                stdscr.addstr(height - 2, left_margin, " SAVE AS: " + filename_input + " ",
+                             curses.color_pair(5) | curses.A_REVERSE | curses.A_BOLD)
                 stdscr.refresh()
 
                 ch = stdscr.getch()
 
-                if ch == 10:  # Enter key - save file
+                if ch == 10 or ch == 13:  # Enter key
                     if filename_input.strip():
                         # Save to new filename
                         new_filename = filename_input.strip()
@@ -1990,10 +1986,12 @@ def editior(stdscr, filename):
                         except Exception as e:
                             status_message = f"Save failed: {str(e)[:30]}..."
                             status_time = time.time()
-                    break
+                    mode = "normal"
 
                 elif ch == 27:  # ESC - cancel
-                    break
+                    mode = "normal"
+                    status_message = "Save cancelled"
+                    status_time = time.time()
 
                 elif ch == 127 or ch == curses.KEY_BACKSPACE:  # Backspace
                     if filename_input:
@@ -2002,7 +2000,6 @@ def editior(stdscr, filename):
                 elif 32 <= ch <= 126:  # Printable characters
                     filename_input += chr(ch)
 
-            mode = "normal"
             select_mode = False
 
         #PASTE
