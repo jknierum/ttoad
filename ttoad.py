@@ -652,8 +652,8 @@ def get_selected_text(text, start_y, start_x, end_y, end_x):
 
     return "\n".join(result)
 
-def delete_selection(text, select_start_y, select_start_x, cursor_y, cursor_x):
 
+def delete_selection(text, select_start_y, select_start_x, cursor_y, cursor_x):
     # 1. Normalize order
     if (cursor_y, cursor_x) < (select_start_y, select_start_x):
         start_y, start_x = cursor_y, cursor_x
@@ -669,10 +669,19 @@ def delete_selection(text, select_start_y, select_start_x, cursor_y, cursor_x):
 
         if new_line == "":
             del text[start_y]
-            start_y = max(0, start_y - 1)
-            start_x = 0
+            # If we deleted the last line, go to previous line end
+            if len(text) == 0:
+                text.append("")
+                return 0, 0
+            elif start_y >= len(text):
+                return len(text) - 1, len(text[-1])
+            else:
+                # Return to the end of the previous line
+                return max(0, start_y - 1), len(text[max(0, start_y - 1)])
         else:
             text[start_y] = new_line
+            # Place cursor at the merge point (start_x)
+            return start_y, start_x
 
     # 3. Multi-line
     else:
@@ -687,19 +696,17 @@ def delete_selection(text, select_start_y, select_start_x, cursor_y, cursor_x):
         # Only insert merged line if not empty
         if merged.strip() != "":
             text.insert(start_y, merged)
+            # Place cursor at the merge point (end of first_part)
+            return start_y, start_x
         else:
-            start_y = max(0, start_y - 1)
-
-        start_x = 0
-
-    # 4. Ensure file always has at least one line
-    if len(text) == 0:
-        text.append("")
-        start_y = 0
-        start_x = 0
-
-    return start_y, start_x
-
+            # If merged line is empty, go to previous line end
+            if start_y > 0 and start_y - 1 < len(text):
+                return start_y - 1, len(text[start_y - 1])
+            elif text:
+                return 0, len(text[0])
+            else:
+                text.append("")
+                return 0, 0
 
 
 def indent_selection(text, select_start_y, cursor_y, tab="    "):
