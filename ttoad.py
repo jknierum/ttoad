@@ -6,9 +6,203 @@ from datetime import datetime
 import signal
 import os
 import subprocess
+import importlib.util
 from syntax.engine import SyntaxHighlighter
 from syntax import SYNTAX_MAP
 import argparse
+
+# Default keybindings (fallback if config not found)
+DEFAULT_NORMAL_MODE = {
+    'up': curses.KEY_UP,
+    'down': curses.KEY_DOWN,
+    'left': curses.KEY_LEFT,
+    'right': curses.KEY_RIGHT,
+    'page_up': curses.KEY_PPAGE,
+    'page_down': curses.KEY_NPAGE,
+    'home': curses.KEY_HOME,
+    'end': curses.KEY_END,
+    'insert_mode': 105,
+    'find_mode': 102,
+    'find_mode_global': 70,
+    'jump_mode': 106,
+    'jump_mode_ctrl': 10,
+    'select_start': 0,
+    'select_word': 119,
+    'select_line': 108,
+    'select_block': 98,
+    'select_all': 97,
+    'yank': 121,
+    'yank_ctrl': 25,
+    'paste': 112,
+    'paste_ctrl': 16,
+    'cut': 120,
+    'cut_ctrl': 24,
+    'delete': 100,
+    'comment': 99,
+    'wrap_round': 40,
+    'wrap_curly': 123,
+    'wrap_square': 91,
+    'wrap_quote_single': 39,
+    'wrap_quote_double': 34,
+    'undo': 21,
+    'redo': 18,
+    'save': 19,
+    'save_as': 1,
+    'quit': 17,
+}
+
+DEFAULT_SETTINGS = {
+    'TAB_SIZE': 4,
+    'LEFT_MARGIN': 6,
+    'TOP_MARGIN': 3,
+    'LINE_NUMBER_STYLE': "normal",
+    'COMMENT_CHAR': "#",
+    'AUTO_CLOSE_BRACKETS': True,
+    'AUTO_CLOSE_QUOTES': True,
+    'AUTO_INDENT': True,
+    'AUTO_COMPLETE': True,
+    'AUTO_COMPLETE_SUGGESTIONS': 5,
+    'UNDO_LIMIT': 500,
+}
+
+def load_config():
+    """Load keybindings and settings from config files"""
+    config_dir = os.path.expanduser("~/.config/ttoad")
+    keybindings = DEFAULT_NORMAL_MODE.copy()
+    settings = DEFAULT_SETTINGS.copy()
+
+    # Create config directory if it doesn't exist
+    if not os.path.exists(config_dir):
+        try:
+            os.makedirs(config_dir)
+            # Create default config files
+            create_default_configs(config_dir)
+        except:
+            pass  # Fail silently, use defaults
+
+    # Try to load keybindings
+    config_file = os.path.join(config_dir, "config.py")
+    if os.path.exists(config_file):
+        try:
+            spec = importlib.util.spec_from_file_location("user_config", config_file)
+            user_config = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(user_config)
+
+            # Update keybindings if they exist
+            if hasattr(user_config, 'NORMAL_MODE'):
+                keybindings.update(user_config.NORMAL_MODE)
+        except:
+            pass  # Use defaults on error
+
+    # Try to load settings
+    settings_file = os.path.join(config_dir, "settings.py")
+    if os.path.exists(settings_file):
+        try:
+            spec = importlib.util.spec_from_file_location("user_settings", settings_file)
+            user_settings = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(user_settings)
+
+            # Update settings
+            for key in DEFAULT_SETTINGS:
+                if hasattr(user_settings, key):
+                    settings[key] = getattr(user_settings, key)
+        except:
+            pass  # Use defaults on error
+
+    return keybindings, settings
+
+def create_default_configs(config_dir):
+    """Create default config files if they don't exist"""
+    # Create config.py
+    config_path = os.path.join(config_dir, "config.py")
+    if not os.path.exists(config_path):
+        with open(config_path, 'w') as f:
+            f.write('''# Ttoad Keybindings Configuration
+# Key codes reference:
+# - Printable chars: ASCII values (97 = 'a', 65 = 'A', etc.)
+# - Ctrl+letter: 1-26 (Ctrl+A=1, Ctrl+B=2, etc.)
+# - Special keys: Use curses constants (curses.KEY_UP, curses.KEY_F1, etc.)
+# - Enter: 13 (after curses.nonl())
+# - Backspace: 127 or 8
+
+import curses
+
+NORMAL_MODE = {
+    # Navigation
+    'up': curses.KEY_UP,
+    'down': curses.KEY_DOWN,
+    'left': curses.KEY_LEFT,
+    'right': curses.KEY_RIGHT,
+    'page_up': curses.KEY_PPAGE,
+    'page_down': curses.KEY_NPAGE,
+    'home': curses.KEY_HOME,
+    'end': curses.KEY_END,
+
+    # Mode switching
+    'insert_mode': 105,  # 'i'
+    'find_mode': 102,     # 'f'
+    'find_mode_global': 70,  # 'F'
+    'jump_mode': 106,      # 'j'
+    'jump_mode_ctrl': 10,  # Ctrl+J
+
+    # Selection
+    'select_start': 0,     # Ctrl+Space
+    'select_word': 119,    # 'w'
+    'select_line': 108,    # 'l'
+    'select_block': 98,    # 'b'
+    'select_all': 97,      # 'a'
+
+    # Actions
+    'yank': 121,           # 'y'
+    'yank_ctrl': 25,       # Ctrl+Y
+    'paste': 112,          # 'p'
+    'paste_ctrl': 16,      # Ctrl+P
+    'cut': 120,            # 'x'
+    'cut_ctrl': 24,        # Ctrl+X
+    'delete': 100,         # 'd'
+    'comment': 99,         # 'c'
+
+    # Bracket wrapping
+    'wrap_round': 40,      # '('
+    'wrap_curly': 123,     # '{'
+    'wrap_square': 91,     # '['
+    'wrap_quote_single': 39,  # "'"
+    'wrap_quote_double': 34,  # '"'
+
+    # Undo/Redo
+    'undo': 21,            # Ctrl+U
+    'redo': 18,            # Ctrl+R
+
+    # File operations
+    'save': 19,            # Ctrl+S
+    'save_as': 1,          # Ctrl+A
+    'quit': 17,            # Ctrl+Q
+}
+''')
+
+    # Create settings.py
+    settings_path = os.path.join(config_dir, "settings.py")
+    if not os.path.exists(settings_path):
+        with open(settings_path, 'w') as f:
+            f.write('''# Ttoad Editor Settings
+
+# Editor appearance
+TAB_SIZE = 4
+LEFT_MARGIN = 6
+TOP_MARGIN = 3
+LINE_NUMBER_STYLE = "normal"  # "normal" or "vim"
+COMMENT_CHAR = "#"
+
+# Behavior
+AUTO_CLOSE_BRACKETS = True
+AUTO_CLOSE_QUOTES = True
+AUTO_INDENT = True
+AUTO_COMPLETE = True
+AUTO_COMPLETE_SUGGESTIONS = 5
+
+# History
+UNDO_LIMIT = 500
+''')
 
 parser = argparse.ArgumentParser(
     prog="Ttoad",
@@ -627,6 +821,18 @@ def add_before_after_selected(key_before, key_after, text, select_start_x , sele
 
 
 def editior(stdscr, filename):
+  # Load user configuration
+    keybindings, settings = load_config()
+
+    # Apply settings to variables
+    tab_size = settings['TAB_SIZE']
+    left_margin = settings['LEFT_MARGIN']
+    top_margin = settings['TOP_MARGIN']
+    comment_cha = settings['COMMENT_CHAR']
+    suggestions_shown = settings['AUTO_COMPLETE_SUGGESTIONS']
+
+
+
 #    stdscr.timeout(50)  # refresh every 50ms
    # Enable resize detection
     curses.cbreak()
@@ -679,9 +885,6 @@ def editior(stdscr, filename):
     select_start_y = 0
     select_start_x = 0
 
-    tab_size = 4
-    left_margin = 6
-    top_margin = 3
     mode = "normal"
     yanked = ""
     last_key = -1
@@ -690,9 +893,7 @@ def editior(stdscr, filename):
     stored_cursor_pos_x = 0
     store_prefix = ""
     suggestion_sel = 0
-    suggestions_shown = 5
     suggestion_on = False
-    comment_cha = "#"
     find_string = ""
     nav_key_last = False
 
@@ -743,7 +944,7 @@ def editior(stdscr, filename):
             stdscr.addstr(2, 0, "Resize window or press Ctrl+Q to exit")
             stdscr.refresh()
             key = stdscr.getch()
-            if key == 17:  # Ctrl+Q
+            if key == keybindings['quit']:  # Ctrl+Q
                 exit()
             continue
 
@@ -1237,7 +1438,7 @@ def editior(stdscr, filename):
     # NORMAL MODE
         elif mode == "normal":
             #ESC
-            if  key == 105:
+            if key == keybindings['insert_mode']:
                 if  select_mode:
                     save_undo_state(
                         undo_stack,
@@ -1338,13 +1539,12 @@ def editior(stdscr, filename):
 
 
             #JUMP j
-            elif key == 106:
+            elif key == keybindings['jump_mode']:
                 jump_pos = ""
                 mode = "jump"
 
             #y,Y
-            elif key == 121: #y: yank selected
-
+            elif key == keybindings['yank']:
                 if select_mode:
                     selected = get_selected_text(
                         text,
@@ -1358,7 +1558,7 @@ def editior(stdscr, filename):
                     select_mode = False
 
             #p,P: Paste
-            elif key == 112: #p: paste at cursor
+            elif key == keybindings['paste']:
                 save_undo_state(
                     undo_stack,
                     text,
@@ -1384,7 +1584,7 @@ def editior(stdscr, filename):
                 select_mode = False
 
             #CUT
-            elif key == 120:  #c
+            elif key == keybindings['cut']:
                 save_undo_state(
                     undo_stack,
                     text,
@@ -1418,7 +1618,7 @@ def editior(stdscr, filename):
 
 #LOCATORS
             #l: line select
-            elif key == 108:
+            elif key == keybindings['select_line']:
                 save_undo_state(
                     undo_stack,
                     text,
@@ -1436,7 +1636,7 @@ def editior(stdscr, filename):
                 cursor_x = len(line)
 
             #b: block select
-            elif key == 98:
+            elif key == keybindings['select_block']:
                 save_undo_state(
                     undo_stack,
                     text,
@@ -1458,7 +1658,7 @@ def editior(stdscr, filename):
 
 
             #d: delete
-            elif key == 100:
+            elif key == keybindings['delete']:
                 if select_mode:
                     cursor_y, cursor_x = delete_selection(
                         text,
@@ -1471,7 +1671,7 @@ def editior(stdscr, filename):
                 select_mode = False
 
             #/: comment
-            elif key == 99: #: comment block
+            elif key == keybindings['comment']:
                 if select_mode:
                     save_undo_state(
                         undo_stack,
@@ -1518,7 +1718,7 @@ def editior(stdscr, filename):
 
 
             #w: word
-            elif key == 119:
+            elif key == keybindings['select_word']:
                 save_undo_state(
                     undo_stack,
                     text,
@@ -1537,7 +1737,7 @@ def editior(stdscr, filename):
                 cursor_x = end
 
             #a: All
-            elif key == 97:
+            elif key == keybindings['select_all']:
                 save_undo_state(
                     undo_stack,
                     text,
@@ -1555,7 +1755,7 @@ def editior(stdscr, filename):
                 cursor_x = len(text[cursor_y])
 
             #FIND
-            elif key == 102:
+            elif key == keybindings['find_mode']:
                 if select_mode:
                     selected = get_selected_text(
                                 text,
@@ -1575,7 +1775,12 @@ def editior(stdscr, filename):
                 select_mode = False
                 mode = "find"
 
-            elif key == 70:
+            #FIND PERVIOUS SERCH
+            elif key == keybindings['find_mode_global']:
+                find_matches = []
+                find_visible_matches = []
+                current_match_range = None
+
                 select_mode = False
                 mode = "find"
 
@@ -1717,7 +1922,7 @@ def editior(stdscr, filename):
                     text[cursor_y] = line[spaces_to_remove:]
                     cursor_x = max(0, cursor_x - spaces_to_remove)
 
-            elif key == curses.KEY_END:
+            elif key == keybindings['end']:
                 line = text[cursor_y]
                 cursor_x = len(line)
                 # Ensure cursor is visible horizontally
@@ -1726,7 +1931,7 @@ def editior(stdscr, filename):
                 elif cursor_x >= scroll_pos_x + visible_width:
                     scroll_pos_x = cursor_x - visible_width + 1
 
-            elif key == curses.KEY_HOME:
+            elif key == keybindings['home']:
                 line = text[cursor_y]
                 front_line = len(line) - len(line.lstrip())
                 if cursor_x <= front_line:
@@ -1801,7 +2006,8 @@ def editior(stdscr, filename):
                 else:
                     select_mode = False
             mode = "normal"
-        elif key == curses.KEY_LEFT:
+        #LEFT
+        elif key ==  keybindings['left']:
             if mode == "find":
                 mode = "normal"
             if cursor_x > 0:
@@ -1812,7 +2018,9 @@ def editior(stdscr, filename):
                     scroll_pos_x = cursor_x
                 elif cursor_x >= scroll_pos_x + visible_width:
                     scroll_pos_x = cursor_x - visible_width + 1
-        elif key == curses.KEY_RIGHT:
+
+        #RIGHT
+        elif key ==  keybindings['right']:
             if mode == "find":
                 mode = "normal"
             if cursor_x < line_length:
@@ -1823,7 +2031,9 @@ def editior(stdscr, filename):
                     scroll_pos_x = cursor_x
                 elif cursor_x >= scroll_pos_x + visible_width:
                     scroll_pos_x = cursor_x - visible_width + 1
-        elif key == curses.KEY_UP:
+
+        #UP
+        elif key ==  keybindings['up']:
             if mode == "find" and not len(suggestion_list) > 0:
                 mode = "normal"
             if suggestion_on == True:
@@ -1843,7 +2053,8 @@ def editior(stdscr, filename):
                     elif cursor_y >= scroll_pos_y + visible_height:
                         scroll_pos_y = cursor_y - visible_height + 1
 
-        elif key == curses.KEY_DOWN:
+        #DOWN
+        elif key ==  keybindings['down']:
             if mode == "find" and not len(suggestion_list) > 0:
                 mode = "normal"
             if suggestion_on == True:
@@ -1864,7 +2075,7 @@ def editior(stdscr, filename):
                     scroll_pos_y = cursor_y - visible_height + 1
 
         # Ctrl+U → Undo
-        elif key == 21:
+        elif key == keybindings['undo']:  # Ctrl+U
             if mode == "find":
                 mode = "normal"
             text, cursor_x, cursor_y, scroll_pos_x, scroll_pos_y = perform_undo(
@@ -1882,7 +2093,7 @@ def editior(stdscr, filename):
             select_mode = False
 
         # Ctrl+r (Redo)
-        elif key == 18:
+        elif key == keybindings['redo']:  # Ctrl+R
             if mode == "find":
                 mode = "normal"
             text, cursor_x, cursor_y, scroll_pos_x, scroll_pos_y = perform_redo(
@@ -1900,24 +2111,22 @@ def editior(stdscr, filename):
             select_mode = False
 
         #CTRL + J (JUMP)
-        elif key ==  10:
+        elif key == keybindings['jump_mode_ctrl']:  # Ctrl+J
             jump_pos = ""
             mode = "jump"
 
         #PGUP / PGDN
-        elif key == 339: #pg up
+        elif key == keybindings['page_up']:
             if mode == "find":
                 mode = "normal"
             half = height // 2
-
             scroll_pos_y = max(0, scroll_pos_y - half)
-
             cursor_y = max(
                 scroll_pos_y,
                 min(cursor_y - half, scroll_pos_y + height - 1)
             )
 
-        elif key == 338: #pgdn
+        elif key == keybindings['page_down']:
             if mode == "find":
                 mode = "normal"
             half = visible_height // 2
@@ -1937,7 +2146,7 @@ def editior(stdscr, filename):
             continue
 
         #SAVE
-        elif key == 19: #ctrl + s
+        elif key == keybindings['save']:  # Ctrl+S
             if filename:
                     save_file(filename, text)
                     saved_text_for_check = text.copy()
@@ -1948,7 +2157,7 @@ def editior(stdscr, filename):
                     select_mode = False
 
         # SAVE AS - Ctrl+A
-        elif key == 1:  # Ctrl+A
+        elif key == keybindings['save_as']:  # Ctrl+A
             # Clear status area and show save prompt
             status_message = "Save as: "
             status_time = time.time()
@@ -2003,11 +2212,11 @@ def editior(stdscr, filename):
             select_mode = False
 
         #PASTE
-        elif key == 16: # Ctrl+P example
+        elif key == keybindings['paste_ctrl']:  # Ctrl+P
             if mode == "find":
                 paste = paste_from_clipboard()
                 query = query + paste
-            elif  select_mode:
+            elif select_mode:
                 save_undo_state(
                     undo_stack,
                     text,
@@ -2018,14 +2227,24 @@ def editior(stdscr, filename):
                 )
                 redo_stack.clear()
 
+                # Store the cursor position before deletion
+                old_cursor_y = cursor_y
+                old_cursor_x = cursor_x
 
-                cursor_y, cursor_x = delete_selection(
-                        text,
-                        select_start_y,
-                        select_start_x,
-                        cursor_y,
-                        cursor_x
-                    )
+                # Delete the selection and get new cursor position
+                new_y, new_x = delete_selection(
+                    text,
+                    select_start_y,
+                    select_start_x,
+                    cursor_y,
+                    cursor_x
+                )
+
+                # Set cursor to the deletion result position
+                cursor_y = new_y
+                cursor_x = new_x
+
+                # Now paste at that position
                 paste = paste_from_clipboard()
                 cursor_y, cursor_x = insert_paste(text, cursor_y, cursor_x, paste)
                 select_mode = False
@@ -2045,8 +2264,9 @@ def editior(stdscr, filename):
                 cursor_y, cursor_x = insert_paste(text, cursor_y, cursor_x, paste)
                 select_mode = False
 
+
         #YANK
-        elif key == 25:  # Ctrl+Y
+        elif key == keybindings['yank_ctrl']:  # Ctrl+Y
             if mode == "find":
                 mode = "normal"
             if select_mode:
@@ -2060,7 +2280,7 @@ def editior(stdscr, filename):
                 copy_to_clipboard(selected)
 
         #CUT
-        elif key == 24:  # Ctrl+x
+        elif key == keybindings['cut_ctrl']:  # Ctrl+X
             if mode == "find":
                 mode = "normal"
             if select_mode:
@@ -2095,7 +2315,7 @@ def editior(stdscr, filename):
 
 
         #SELECT
-        elif key == 0:  # Ctrl+Space
+        elif key == keybindings['select_start']:  # Ctrl+Space
             if mode == "find":
                 mode = "normal"
             if select_mode:
@@ -2131,14 +2351,14 @@ def editior(stdscr, filename):
 
         #Was last not -1 key an arrow?
             NAV_KEYS = {
-                curses.KEY_UP,
-                curses.KEY_DOWN,
-                curses.KEY_LEFT,
-                curses.KEY_RIGHT,
-                curses.KEY_HOME,
-                curses.KEY_END,
-                curses.KEY_NPAGE,
-                curses.KEY_PPAGE
+                keybindings['up'],
+                keybindings['down'],
+                keybindings['left'],
+                keybindings['right'],
+                keybindings['home'],
+                keybindings['end'],
+                keybindings['page_up'],
+                keybindings['page_down']
             }
 
             if key in NAV_KEYS and not can_autocomplete(text, cursor_y, cursor_x, mode, nav_key_last, prefix):
