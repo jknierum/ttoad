@@ -628,11 +628,21 @@ def add_before_after_selected(key_before, key_after, text, select_start_x , sele
 
 def editior(stdscr, filename):
 #    stdscr.timeout(50)  # refresh every 50ms
+   # Enable resize detection
+    curses.cbreak()
+    stdscr.keypad(True)
+
     curses.set_escdelay(1)
     status_message = ""
     status_time = 0
     curses.curs_set(1)
     curses.nonl()
+
+
+    try:
+        curses.resizeterm(*stdscr.getmaxyx())
+    except:
+        pass
 
     curses.start_color()  # Enable color mode
     curses.use_default_colors()  # Optional: let terminal default background show
@@ -688,6 +698,7 @@ def editior(stdscr, filename):
 
     scroll_pos_y = 0
     scroll_pos_x = 0
+    jump_pos = ""
     undo_stack = []
     redo_stack = []
     tm_colour = 1
@@ -723,7 +734,29 @@ def editior(stdscr, filename):
             line_length = len(text[cursor_y])
         else:
             line_length = 0
+
+        # Minimum window size check
         height, width = stdscr.getmaxyx()
+        if height < 10 or width < 30:
+            stdscr.clear()
+            stdscr.addstr(0, 0, "Terminal too small! Need at least 10x30", curses.A_BOLD)
+            stdscr.addstr(2, 0, "Resize window or press Ctrl+Q to exit")
+            stdscr.refresh()
+            key = stdscr.getch()
+            if key == 17:  # Ctrl+Q
+                exit()
+            continue
+
+        visible_height = height - (top_margin * 2)
+        visible_width = width - left_margin
+
+        # Ensure valid dimensions
+        if visible_height < 1:
+            visible_height = 1
+        if visible_width < 1:
+            visible_width = 1
+
+
         suggestion_on = False
         screen_y = cursor_y - scroll_pos_y
 
@@ -770,20 +803,52 @@ def editior(stdscr, filename):
         visible_height = height - (top_margin * 2)  # number of lines we can display
         visible_width = width - (left_margin)
 
-        for i, line in enumerate(text[scroll_pos_y:scroll_pos_y + visible_height]):
-            if i >= height - (top_margin * 2):
-                break  # don't draw past bottom of screen
+        # Ensure we have at least 1 line to display
+        if visible_height < 1:
+            visible_height = 1
+        if visible_width < 1:
+            visible_width = 1
 
-        # Draw the line
+       # Calculate how many lines we can actually draw
+        max_draw_lines = min(visible_height, len(text) - scroll_pos_y)
+
+        for i in range(max_draw_lines):
+            line_idx = scroll_pos_y + i
+            if line_idx >= len(text):
+                break
+
+            line = text[line_idx]
+
+            # Don't draw past bottom of screen
+            if i + top_margin >= height:
+                break
+
+            # Draw the line
             visible_line = line[scroll_pos_x:scroll_pos_x + visible_width]
-            highlighter.highlight_line(stdscr, i + top_margin, left_margin, visible_line)
-            screen_line_y = i + scroll_pos_y
 
+            # Ensure we don't try to draw beyond right edge
+            if left_margin < width:
+                highlighter.highlight_line(stdscr, i + top_margin, left_margin, visible_line)
+
+            screen_line_y = line_idx
+
+            # Draw line numbers
+            line_count = str(i + 1 + scroll_pos_y)  # +scroll_pos_y to show actual line number
+            line_num_width = 4
+
+            if i == cursor_y - scroll_pos_y:
+                stdscr.addstr(i + top_margin, 0, str(int(line_count)).rjust(line_num_width + 1),
+                             curses.color_pair(5) | curses.A_REVERSE | curses.A_BOLD)
+            else:
+                stdscr.addstr(i + top_margin, 0, str(int(line_count)).rjust(line_num_width),
+                             curses.color_pair(1))
+
+            # Character-by-character drawing for selection/find highlighting
             for j, ch in enumerate(visible_line):
                 screen_x = j + left_margin
                 screen_y = i + top_margin
                 actual_x = j + scroll_pos_x
-                actual_y = screen_line_y
+                actual_y = line_idx
 
                 # Check if this character is part of a find match
                 is_match = False
@@ -793,7 +858,7 @@ def editior(stdscr, filename):
                             is_match = True
                             break
 
-                # Check if this is the current match (using the full range)
+                # Check if this is the current match
                 is_current_match = False
                 if current_match_range:
                     match_y, match_start_x, match_end_y, match_end_x = current_match_range
@@ -801,7 +866,7 @@ def editior(stdscr, filename):
                         is_current_match = True
 
                 if select_mode and is_selected(
-                    screen_line_y,
+                    actual_y,
                     actual_x,
                     cursor_y,
                     cursor_x,
@@ -810,41 +875,10 @@ def editior(stdscr, filename):
                 ):
                     stdscr.addstr(screen_y, screen_x, ch, curses.A_REVERSE)
                 elif is_current_match and mode == "find":
-                    # Highlight entire current match with reverse and bold
                     stdscr.addstr(screen_y, screen_x, ch, curses.A_REVERSE | curses.A_BOLD)
-
                 elif is_match:
-                    # Highlight other matches
                     stdscr.addstr(screen_y, screen_x, ch, curses.color_pair(5) | curses.A_BOLD | curses.A_REVERSE)
-                else:
-                    # Normal text - already handled by syntax highlighter
-                    # But we need to let the highlighter do its job
-                    pass
-
-
-
-
-        # Draw line numbers
-            line_count = str(i + 1)
-            ln_x = 4 #max(0, (left_margin - len(line_count)) - 1)
-            line_num_width = 4
-
-            num_style = "normal"
-            if num_style == "normal":
-                if i == cursor_y - scroll_pos_y:
-                    stdscr.addstr(i + top_margin, 0, str(int(line_count) + scroll_pos_y).rjust(line_num_width +1), curses.color_pair(5) | curses.A_REVERSE | curses.A_BOLD)
-                else:
-                    stdscr.addstr(i + top_margin, 0, str(int(line_count) + scroll_pos_y).rjust(line_num_width), curses.color_pair(1))
-
-            elif num_style == "vim":
-                if i == cursor_y - scroll_pos_y:
-                    stdscr.addstr(i + top_margin, 0, str(int(line_count) + scroll_pos_y).rjust(line_num_width +1), curses.color_pair(5) | curses.A_REVERSE | curses.A_BOLD)
-                elif i > screen_y:
-                    stdscr.addstr(i + top_margin, 0, str(int(line_count) + scroll_pos_y - cursor_y - 1).rjust(line_num_width), curses.color_pair(1))
-                elif i < screen_y:
-                    stdscr.addstr(i + top_margin, 0, str(-(int(line_count) + scroll_pos_y - cursor_y - 1)).rjust(line_num_width), curses.color_pair(1))
-
-
+                # else: normal text - already handled by syntax highlighter
 
         #MODE DISPLAY
         mode_dis = mode.upper()
@@ -937,7 +971,7 @@ def editior(stdscr, filename):
 
         # Clip cursor so it stays inside screen
         cursor_y = max(0, min(cursor_y, len(text) - 1))
-        cursor_x = max(0, min(cursor_x, width - (left_margin * 2) - 1))
+#        cursor_x = max(0, min(cursor_x, width - (left_margin * 2) - 1))
 
         # Clamp screen_y to visible area
         screen_y = cursor_y - scroll_pos_y
@@ -1442,7 +1476,7 @@ def editior(stdscr, filename):
                 select_mode = False
 
             #/: comment
-            elif key == 47: #: comment block
+            elif key == 99: #: comment block
                 if select_mode:
                     save_undo_state(
                         undo_stack,
@@ -1527,10 +1561,26 @@ def editior(stdscr, filename):
 
             #FIND
             elif key == 102:
+                if select_mode:
+                    selected = get_selected_text(
+                                text,
+                                select_start_y,
+                                select_start_x,
+                                cursor_y,
+                                cursor_x
+                            )
+                    query = selected
+                else:
+                    query = ""
+
+                find_matches = []
+                find_visible_matches = []
+                current_match_range = None
+
+                select_mode = False
                 mode = "find"
 
             elif key == 70:
-                query = ""
                 select_mode = False
                 mode = "find"
 
@@ -1675,6 +1725,11 @@ def editior(stdscr, filename):
             elif key == curses.KEY_END:
                 line = text[cursor_y]
                 cursor_x = len(line)
+                # Ensure cursor is visible horizontally
+                if cursor_x < scroll_pos_x:
+                    scroll_pos_x = cursor_x
+                elif cursor_x >= scroll_pos_x + visible_width:
+                    scroll_pos_x = cursor_x - visible_width + 1
 
             elif key == curses.KEY_HOME:
                 line = text[cursor_y]
@@ -1683,6 +1738,12 @@ def editior(stdscr, filename):
                     cursor_x = 0
                 else:
                     cursor_x = front_line
+                # Same visibility check
+                if cursor_x < scroll_pos_x:
+                    scroll_pos_x = cursor_x
+                elif cursor_x >= scroll_pos_x + visible_width:
+                    scroll_pos_x = cursor_x - visible_width + 1
+
 
             elif key == curses.KEY_ENTER or key == 13:
                 if not mode == "find":
@@ -1869,7 +1930,16 @@ def editior(stdscr, filename):
             cursor_y = min(len(text) - 1, cursor_y + half)
             scroll_pos_y = cursor_y - cursor_y_relivive_pos
 
-
+        # Handle terminal resize
+        elif key == curses.KEY_RESIZE:
+            height, width = stdscr.getmaxyx()
+            visible_height = max(1, height - (top_margin * 2))
+            visible_width = max(1, width - left_margin)
+            cursor_y = min(cursor_y, len(text) - 1)
+            if text and cursor_y < len(text):
+                cursor_x = min(cursor_x, len(text[cursor_y]))
+            stdscr.clear()
+            continue
 
         #SAVE
         elif key == 19: #ctrl + s
