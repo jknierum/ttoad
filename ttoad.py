@@ -142,7 +142,7 @@ NORMAL_MODE = {
     'insert_mode': 105,  # 'i'
     'find_mode': 102,     # 'f'
     'find_mode_global': 70,  # 'F'
-    'jump_mode': 106,      # 'j'
+    'jump_mode': 74,      # 'J'
     'jump_mode_ctrl': 10,  # Ctrl+J
 
     # Selection
@@ -208,11 +208,58 @@ parser = argparse.ArgumentParser(
     prog="Ttoad",
     description="Ttoad: a Tiny terminal model code editor ",
     epilog="""
+
     --Keybindings--
-    save: ctrl + s
-    quit: ctrl + q
+    # Mode switching
+    'insert_mode': 105,      # 'i'
+    'find_mode': 102,        # 'f'
+    'find_mode_global': 70,  # 'F'
+    'jump_mode': 74,         # 'J'
+    'jump_mode_ctrl': 10,    # Ctrl+J
+
+    # Selection
+    'select_start': 0,       # Ctrl+Space
+    'select_word': 119,      # 'w'
+    'select_line': 108,      # 'l'
+    'select_block': 98,      # 'b'
+    'select_all': 97,        # 'a'
+
+    # Actions
+    'yank': 121,             # 'y'
+    'yank_ctrl': 25,         # Ctrl+Y
+    'paste': 112,            # 'p'
+    'paste_ctrl': 16,        # Ctrl+P
+    'cut': 120,              # 'x'
+    'cut_ctrl': 24,          # Ctrl+X
+    'delete': 100,           # 'd'
+    'comment': 99,           # 'c'
+
+    # Undo/Redo
+    'undo': 21,              # Ctrl+U
+    'redo': 18,              # Ctrl+R
+
+    # File operations
+    'save': 19,              # Ctrl+S
+    'save_as': 1,            # Ctrl+A
+    'quit': 17,              # Ctrl+Q
+
+    Config.py and settings.py files in ~/.config/ttoad/
+    Move ttoad to back: ctrl + z (fg to bring back to front)
+
     """,
     formatter_class=argparse.RawTextHelpFormatter
+)
+
+import subprocess
+import sys
+
+
+
+# Add the fzf flag
+parser.add_argument(
+    "-f", "--fzf",
+    action="store_true",
+    help="Open fzf file picker to select a file"
 )
 
 parser.add_argument(
@@ -222,9 +269,34 @@ parser.add_argument(
     help="File to open (creates new file if it doesn't exist)"
 )
 
+
 args = parser.parse_args()
 
-filename = args.filename
+# Handle fzf flag
+if args.fzf:
+    try:
+        import subprocess
+        result = subprocess.run(['fzf'], capture_output=True, text=True, check=True)
+        selected = result.stdout.strip()
+        if selected:
+            filename = selected
+        else:
+            print("No file selected")
+            sys.exit(0)
+    except subprocess.CalledProcessError:
+        print("File selection cancelled")
+        sys.exit(0)
+    except FileNotFoundError:
+        print("Error: fzf is not installed. Please install fzf first.")
+        sys.exit(1)
+else:
+    filename = args.filename
+
+# If no filename provided (and not using fzf), show error
+if not filename:
+    print("Enter a filename to create or edit a file.")
+    print("Usage: ttoad [filename] or ttoad -f to use fzf")
+    sys.exit(1)
 
 def open_file(filename):
     text = []
@@ -236,23 +308,13 @@ def open_file(filename):
         text = [""]  # start with empty text if file doesn’t exist
     return text
 
-
-if not filename:
-    print("Enter a filename to create or edit a file.")
-    exit()
-
-# Ensure we always have at least an empty buffer
-if filename is None:
-    # No filename provided - start with empty buffer
+# Load the file
+try:
+    text = open_file(filename)
+except Exception as e:
+    # If there's any error opening the file, start with empty buffer
     text = [""]
-else:
-    try:
-        text = open_file(filename)
-    except Exception as e:
-        # If there's any error opening the file, start with empty buffer
-        text = [""]
-        print(f"Warning: Could not open {filename}, starting with empty buffer: {e}", file=sys.stderr)
-
+    print(f"Warning: Could not open {filename}, starting with empty buffer: {e}", file=sys.stderr)
 
 def load_syntax(filename):
     ext = os.path.splitext(filename)[1]
@@ -263,8 +325,6 @@ signal.signal(signal.SIGINT, signal.SIG_IGN) #ctrl + c
 #signal.signal(signal.SIGTSTP, signal.SIG_IGN) #crtl + z
 
 os.system("stty -ixon")
-
-filename = args.filename
 
 
 def save_file(filename, text):
