@@ -652,9 +652,8 @@ def get_selected_text(text, start_y, start_x, end_y, end_x):
 
     return "\n".join(result)
 
-
 def delete_selection(text, select_start_y, select_start_x, cursor_y, cursor_x):
-    # 1. Normalize order
+    # Normalize selection order
     if (cursor_y, cursor_x) < (select_start_y, select_start_x):
         start_y, start_x = cursor_y, cursor_x
         end_y, end_x = select_start_y, select_start_x
@@ -662,52 +661,30 @@ def delete_selection(text, select_start_y, select_start_x, cursor_y, cursor_x):
         start_y, start_x = select_start_y, select_start_x
         end_y, end_x = cursor_y, cursor_x
 
-    # 2. Same line
-    if start_y == end_y:
-        line = text[start_y]
-        new_line = line[:start_x] + line[end_x:]
+    # Handle zero-width selection
+    if start_y == end_y and start_x == end_x:
+        return start_y, start_x
 
-        if new_line == "":
-            del text[start_y]
-            # If we deleted the last line, go to previous line end
-            if len(text) == 0:
-                text.append("")
-                return 0, 0
-            elif start_y >= len(text):
-                return len(text) - 1, len(text[-1])
-            else:
-                # Return to the end of the previous line
-                return max(0, start_y - 1), len(text[max(0, start_y - 1)])
-        else:
-            text[start_y] = new_line
-            # Place cursor at the merge point (start_x)
-            return start_y, start_x
+    # Get the text before the selection
+    before = "\n".join(text[:start_y])
+    if start_y < len(text):
+        before += ("\n" if before else "") + text[start_y][:start_x]
 
-    # 3. Multi-line
-    else:
-        first_part = text[start_y][:start_x]
-        last_part = text[end_y][end_x:]
+    # Get the text after the selection
+    after = text[end_y][end_x:] + ("\n" if end_y < len(text)-1 else "")
+    if end_y + 1 < len(text):
+        after += "\n".join(text[end_y + 1:])
 
-        merged = first_part + last_part
+    # Combine and split
+    full_text = before + after
+    new_text = full_text.split("\n") if full_text else [""]
 
-        # Delete all affected lines first
-        del text[start_y:end_y + 1]
+    # Update the original text
+    text.clear()
+    text.extend(new_text)
 
-        # Only insert merged line if not empty
-        if merged.strip() != "":
-            text.insert(start_y, merged)
-            # Place cursor at the merge point (end of first_part)
-            return start_y, start_x
-        else:
-            # If merged line is empty, go to previous line end
-            if start_y > 0 and start_y - 1 < len(text):
-                return start_y - 1, len(text[start_y - 1])
-            elif text:
-                return 0, len(text[0])
-            else:
-                text.append("")
-                return 0, 0
-
+    # Return cursor position at the merge point
+    return start_y, start_x
 
 def indent_selection(text, select_start_y, cursor_y, tab="    "):
 
@@ -1666,6 +1643,19 @@ def editior(stdscr, filename):
 
             #d: delete
             elif key == keybindings['delete']:
+                save_undo_state(
+                    undo_stack,
+                    text,
+                    cursor_x,
+                    cursor_y,
+                    scroll_pos_x,
+                    scroll_pos_y
+                )
+                redo_stack.clear()
+
+                if select_start_x == cursor_x and select_start_y == cursor_y:
+                    select_mode =  False
+
                 if select_mode:
                     cursor_y, cursor_x = delete_selection(
                         text,
@@ -1675,8 +1665,30 @@ def editior(stdscr, filename):
                         cursor_x
                     )
 
-                select_mode = False
+                    select_mode = False
 
+
+                else:
+                    if cursor_x > 0:
+                        line = text[cursor_y]
+                        tab = get_tab_level(line)
+                        indent_width = len(line) - len(line.lstrip(" "))
+                        spaces_to_remove = 0
+
+                        if indent_width >= tab_size and cursor_x <= indent_width:
+                            # remove one indentation level
+                            text[cursor_y] = line[tab_size:]
+                            cursor_x = max(0, cursor_x - tab_size)
+                        else:
+                            text[cursor_y] = line[:cursor_x-1] + line[cursor_x:]
+                            cursor_x -= 1
+
+
+                    elif cursor_y > 0: #Move back to previous line and delete
+                        cursor_x = len(text[cursor_y-1])
+                        text[cursor_y - 1] += text[cursor_y]
+                        del text[cursor_y]
+                        cursor_y -= 1
             #/: comment
             elif key == keybindings['comment']:
                 if select_mode:
@@ -2170,7 +2182,7 @@ def editior(stdscr, filename):
             status_time = time.time()
 
             # Enter a mini input mode for filename
-            filename_input = ""
+            filename_input = filename
             mode = "save_as"  # Temporary mode
 
             while mode == "save_as":
