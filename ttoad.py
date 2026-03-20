@@ -24,6 +24,7 @@ DEFAULT_NORMAL_MODE = {
     'insert_mode': 105,
     'find_mode': 102,
     'find_mode_global': 70,
+    'find_ctrl': 6,
     'jump_mode': 106,
     'jump_mode_ctrl': 10,
     'select_start': 0,
@@ -2391,6 +2392,26 @@ def editior(stdscr, filename):
                 )
 
                 select_mode = False
+
+        elif key ==  keybindings['find_ctrl']:
+                if select_mode:
+                    selected = get_selected_text(
+                                text,
+                                select_start_y,
+                                select_start_x,
+                                cursor_y,
+                                cursor_x
+                            )
+                    query = selected
+                else:
+                    query = ""
+
+                find_matches = []
+                find_visible_matches = []
+                current_match_range = None
+
+                select_mode = False
+                mode = "find"
 
 
         #SELECT
