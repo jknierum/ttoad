@@ -2,7 +2,7 @@ import re
 
 PYTHON_RULES = [
     # comments
-    (re.compile(r"#.*"), 3),
+    (re.compile(r"#.*"), 1),
 
     # decorators - match @decorator, @decorator.arg, etc.
     (re.compile(r"@[a-zA-Z_][a-zA-Z0-9_.]*"), 8),  # Using same cyan as function names

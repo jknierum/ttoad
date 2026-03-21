@@ -863,7 +863,84 @@ def add_before_after_selected(key_before, key_after, text, select_start_x , sele
     end_line = text[cursor_y]
     text[cursor_y] = end_line[:cursor_x] + chr(key_after) + end_line[cursor_x:]
 
+def get_comment_char(filename):
+    """Return the appropriate comment character based on file extension"""
+    if not filename:
+        return "#"  # Default
 
+    ext = os.path.splitext(filename)[1]
+    basename = os.path.basename(filename)
+
+    # Map file extensions to comment characters
+    comment_map = {
+        # Python
+        '.py': '#',
+        '.pyw': '#',
+
+        # Lua/Love2D
+        '.lua': '--',
+        '.love': '--',
+
+        # Shell scripts
+        '.sh': '#',
+        '.bash': '#',
+        '.bashrc': '#',
+        '.bash_profile': '#',
+        '.zsh': '#',
+        '.zshrc': '#',
+
+        # Configuration files
+        '.conf': '#',
+        '.cfg': '#',
+
+        # C/C++ style
+        '.c': '//',
+        '.cpp': '//',
+        '.h': '//',
+        '.hpp': '//',
+        '.java': '//',
+        '.js': '//',
+        '.ts': '//',
+        '.go': '//',
+        '.rs': '//',
+        '.swift': '//',
+
+        # HTML/XML style
+        '.html': '<!--',
+        '.htm': '<!--',
+        '.xml': '<!--',
+        '.xhtml': '<!--',
+
+        # CSS
+        '.css': '/*',
+        '.scss': '//',
+        '.sass': '//',
+
+        # Ruby
+        '.rb': '#',
+        '.erb': '<%#',
+
+        # SQL
+        '.sql': '--',
+
+        # Makefiles
+        'Makefile': '#',
+        'makefile': '#',
+        '.mk': '#',
+
+        # Docker
+        'Dockerfile': '#',
+
+        # Default
+        'default': '#'
+    }
+
+    # Check by basename first (for special files without extensions)
+    if basename in comment_map:
+        return comment_map[basename]
+
+    # Then check by extension
+    return comment_map.get(ext, '#')
 
 def editior(stdscr, filename):
   # Load user configuration
@@ -873,9 +950,18 @@ def editior(stdscr, filename):
     tab_size = settings['TAB_SIZE']
     left_margin = settings['LEFT_MARGIN']
     top_margin = settings['TOP_MARGIN']
-    comment_cha = settings['COMMENT_CHAR']
     suggestions_shown = settings['AUTO_COMPLETE_SUGGESTIONS']
 
+   # Get dynamic comment character based on file type
+    dynamic_comment_char = get_comment_char(filename)
+
+    # Use user setting if specified, otherwise use dynamic one
+    comment_cha = settings.get('COMMENT_CHAR', dynamic_comment_char)
+    # If the user setting is the default, override with dynamic
+    if comment_cha == DEFAULT_SETTINGS['COMMENT_CHAR']:
+        comment_cha = dynamic_comment_char
+
+    suggestions_shown = settings['AUTO_COMPLETE_SUGGESTIONS']
 
 
 #    stdscr.timeout(50)  # refresh every 50ms
@@ -917,8 +1003,19 @@ def editior(stdscr, filename):
 
 
     # Create syntax highlighter
-    ext = os.path.splitext(filename)[1] if filename else ""
-    rules = SYNTAX_MAP.get(ext, [])
+    if filename:
+        ext = os.path.splitext(filename)[1]
+        basename = os.path.basename(filename)
+
+        # Try to get rules by extension first
+        rules = SYNTAX_MAP.get(ext, [])
+
+        # If no rules found, try by basename (for files like .bashrc)
+        if not rules:
+            rules = SYNTAX_MAP.get(basename, [])
+    else:
+        rules = []
+
     highlighter = SyntaxHighlighter(rules)
 
     cursor_y = 0
