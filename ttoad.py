@@ -1131,6 +1131,7 @@ def editior(stdscr, filename):
         else:
             tm_colour = 1
 
+
         if status_message:
             stdscr.addstr(1, left_margin, " " + status_message + " ", curses.color_pair(5) | curses.A_BOLD | curses.A_REVERSE)
             if time.time() - status_time > 2:
@@ -1221,6 +1222,9 @@ def editior(stdscr, filename):
                 # else: normal text - already handled by syntax highlighter
 
         #MODE DISPLAY
+        if select_mode:
+            mode_dis = "SELECT"
+
         stdscr.addstr(height - 2, left_margin, " " + mode_dis + " ", curses.color_pair(5) | curses.A_REVERSE | curses.A_BOLD)
 
         #YANKED
