@@ -244,6 +244,11 @@ parser = argparse.ArgumentParser(
     'save_as': 1,            # Ctrl+A
     'quit': 17,              # Ctrl+Q
 
+    # Mouse
+    click to set cursor
+    click and drag to select
+    dbl click to exit selection
+
     Config.py and settings.py files in ~/.config/ttoad/
     Move ttoad to back: ctrl + z (fg to bring back to front)
 
@@ -949,7 +954,7 @@ def get_comment_char(filename):
     return comment_map.get(ext, '#')
 
 def editior(stdscr, filename):
-  # Load user configuration
+    # Load user configuration
     keybindings, settings = load_config()
 
     # Apply settings to variables
@@ -958,7 +963,7 @@ def editior(stdscr, filename):
     top_margin = settings['TOP_MARGIN']
     suggestions_shown = settings['AUTO_COMPLETE_SUGGESTIONS']
 
-   # Get dynamic comment character based on file type
+    # Get dynamic comment character based on file type
     dynamic_comment_char = get_comment_char(filename)
 
     # Use user setting if specified, otherwise use dynamic one
@@ -969,18 +974,19 @@ def editior(stdscr, filename):
 
     suggestions_shown = settings['AUTO_COMPLETE_SUGGESTIONS']
 
-
-#    stdscr.timeout(50)  # refresh every 50ms
-   # Enable resize detection
+    # Enable resize detection
     curses.cbreak()
     stdscr.keypad(True)
+
+    # Enable mouse support
+    curses.mousemask(curses.ALL_MOUSE_EVENTS | curses.REPORT_MOUSE_POSITION)
+    curses.mouseinterval(0)  # Get mouse events as quickly as possible
 
     curses.set_escdelay(1)
     status_message = ""
     status_time = 0
     curses.curs_set(1)
     curses.nonl()
-
 
     try:
         curses.resizeterm(*stdscr.getmaxyx())
@@ -1007,7 +1013,6 @@ def editior(stdscr, filename):
 
     saved_text_for_check = text.copy()
 
-
     # Create syntax highlighter
     if filename:
         ext = os.path.splitext(filename)[1]
@@ -1025,7 +1030,7 @@ def editior(stdscr, filename):
     highlighter = SyntaxHighlighter(rules)
 
     cursor_y = 0
-    cursor_x =0
+    cursor_x = 0
 
     line_length = len(text[cursor_y]) if text else 0
 
@@ -1063,6 +1068,11 @@ def editior(stdscr, filename):
     current_match_pos = None  # Current match position (for cursor)
 
     current_match_range = None  # Will store (start_y, start_x, end_y, end_x)
+
+   # Mouse state variables
+    mouse_dragging = False
+    mouse_click_start_y = 0
+    mouse_click_start_x = 0
 
     def get_tab_level(line, tab_size=4):
         count = 0
@@ -1134,27 +1144,12 @@ def editior(stdscr, filename):
         else:
             stdscr.addstr(1, left_margin, " " + dis_filename + " ", curses.color_pair(tm_colour) | curses.A_BOLD | curses.A_REVERSE)
 
-        #TIME
-
-#        y = 1
-#        x = width - left_margin - len(str(current_time))
-#
-#        x = max(0, x)
-#
-#        stdscr.addstr(
-#            y,
-#            x,
-#            current_time[:width - x - 1],
-#            curses.color_pair(1)
-#        )
-#
         # Draw text
         height, width = stdscr.getmaxyx()
         visible_height = height - (top_margin * 2)  # number of lines we can display
         visible_width = width - (left_margin)
 
-
-       # Calculate how many lines we can actually draw
+        # Calculate how many lines we can actually draw
         max_draw_lines = min(visible_height, len(text) - scroll_pos_y)
 
         for i in range(max_draw_lines):
@@ -1315,7 +1310,6 @@ def editior(stdscr, filename):
 
         # Clip cursor so it stays inside screen
         cursor_y = max(0, min(cursor_y, len(text) - 1))
-#        cursor_x = max(0, min(cursor_x, width - (left_margin * 2) - 1))
 
         # Clamp screen_y to visible area
         screen_y = cursor_y - scroll_pos_y
@@ -1325,10 +1319,66 @@ def editior(stdscr, filename):
 
         stdscr.move(screen_y + top_margin, screen_x + left_margin)
 
-
         stdscr.refresh()
 
         key = stdscr.getch()
+
+
+        # Handle mouse events
+        if key == curses.KEY_MOUSE:
+            try:
+                _, mx, my, _, bstate = curses.getmouse()
+
+                # Convert screen coordinates to text coordinates
+                text_y = my - top_margin + scroll_pos_y
+                text_x = mx - left_margin + scroll_pos_x
+
+                # Handle scroll wheel events
+                if bstate & curses.BUTTON4_PRESSED:
+                    scroll_pos_y = max(0, scroll_pos_y - 3)
+                    continue
+
+                elif bstate & curses.BUTTON5_PRESSED:
+                    scroll_pos_y = min(len(text) - visible_height, scroll_pos_y + 3)
+                    continue
+
+                # Ensure coordinates are within bounds for click/drag
+                if 0 <= text_y < len(text):
+                    # Clamp text_x to line length
+                    text_x = max(0, min(text_x, len(text[text_y])))
+
+                    # Mouse button pressed
+                    if bstate & curses.BUTTON1_PRESSED:
+                        if select_mode:
+                            if text_y == cursor_y and text_x == cursor_x:
+                                select_mode = False
+                            else:
+                                cursor_y = text_y
+                                cursor_x = text_x
+                        else:
+                            select_mode = False
+                            select_start_y = text_y
+                            select_start_x = text_x
+                            cursor_y = text_y
+                            cursor_x = text_x
+                            stored_cursor_pos_x = cursor_x
+                            stored_cursor_pos_y = cursor_y
+                            mouse_dragging = True
+                        continue
+
+                    # Mouse button released
+                    elif bstate & curses.BUTTON1_RELEASED:
+                        if text_y == cursor_y and text_x == cursor_x:
+                            mouse_dragging = False
+#                            select_mode =  False
+                        else:
+                            select_mode = True
+                            cursor_y = text_y
+                            cursor_x = text_x
+                        continue
+
+            except:
+                pass  # Ignore mouse errors
 
     # INSERT MODE
         if mode == "insert":
@@ -2574,8 +2624,5 @@ def editior(stdscr, filename):
             text.append("")
             cursor_y = 0
 
-        #status_message = str(last_key) #f"Key: {key}"
-
 
 curses.wrapper(lambda stdscr: editior(stdscr, filename))
-
