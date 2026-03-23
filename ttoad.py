@@ -406,6 +406,9 @@ def delete_current_word(text, cursor_y, cursor_x):
     return cursor_x
 
 def get_current_word(text, cursor_y, cursor_x):
+    if cursor_y < 0 or cursor_y >= len(text):
+        return cursor_x, cursor_x
+
     line = text[cursor_y]
     start = cursor_x
     end = cursor_x
@@ -434,6 +437,9 @@ def get_current_word(text, cursor_y, cursor_x):
     return start, end
 
 def get_current_prefix(text, cursor_y, cursor_x):
+    if cursor_y < 0 or cursor_y >= len(text):
+        return ""
+
     line = text[cursor_y]
 
     i = cursor_x - 1
