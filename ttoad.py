@@ -1355,6 +1355,10 @@ def editior(stdscr, filename):
 
                     # Mouse button pressed
                     if bstate & curses.BUTTON1_PRESSED:
+                        if mode == "find":
+                            mode = "normal"
+                            select_mode = False
+
                         if select_mode:
                             if text_y == cursor_y and text_x == cursor_x:
                                 select_mode = False
@@ -1544,6 +1548,11 @@ def editior(stdscr, filename):
                         scroll_pos_y = cursor_y
                     scroll_pos_x = 0
 
+                    # Update matches whenever query changes
+                    find_matches, find_visible_matches = find_and_highlight(
+                        text, query, cursor_y, cursor_x, scroll_pos_y, visible_height
+                    )
+
             #BTAB
             elif key == curses.KEY_BTAB or key == 353:
                 if find_matches:
@@ -1570,6 +1579,12 @@ def editior(stdscr, filename):
                     elif scroll_pos_y < 0:
                         scroll_pos_y = cursor_y
                     scroll_pos_x = 0
+
+
+                    # Update matches whenever query changes
+                    find_matches, find_visible_matches = find_and_highlight(
+                        text, query, cursor_y, cursor_x, scroll_pos_y, visible_height
+                    )
 
 
             #LETTERS
