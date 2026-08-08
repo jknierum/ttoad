@@ -2308,7 +2308,7 @@ def editior(stdscr, filename):
                         scroll_pos_y = cursor_y - visible_height + 1
 
         #DOWN
-        elif key ==  keybindings['down']:
+        elif key == keybindings['down']:
             if mode == "find" and not len(suggestion_list) > 0:
                 mode = "normal"
             if suggestion_on == True:
@@ -2327,6 +2327,109 @@ def editior(stdscr, filename):
                     scroll_pos_y = cursor_y
                 elif cursor_y >= scroll_pos_y + visible_height:
                     scroll_pos_y = cursor_y - visible_height + 1
+        
+
+        if key == curses.KEY_SR:  # Shift+Up - Move line(s) up
+            if text:
+                # Determine which lines to move
+                if select_mode:
+                    # Move the entire selected block
+                    start_y = min(select_start_y, cursor_y)
+                    end_y = max(select_start_y, cursor_y)
+                    
+                    # Can't move above line 0
+                    if start_y > 0:
+                        save_undo_state(undo_stack, text, cursor_x, cursor_y, 
+                                    scroll_pos_x, scroll_pos_y)
+                        redo_stack.clear()
+                        
+                        # Extract the selected block
+                        block = text[start_y:end_y + 1]
+                        
+                        # Remove the block
+                        del text[start_y:end_y + 1]
+                        
+                        # Insert it one line up
+                        text[start_y - 1:start_y - 1] = block
+                        
+                        # Update cursor and selection positions
+                        cursor_y = start_y - 1
+                        select_start_y = start_y - 1
+                        # Keep cursor_x the same
+                        
+                        if cursor_y < scroll_pos_y:
+                            scroll_pos_y = cursor_y
+                        
+                        status_message = f"Moved {len(block)} lines up"
+                        status_time = time.time()
+                else:
+                    # Move single line
+                    if cursor_y > 0:
+                        save_undo_state(undo_stack, text, cursor_x, cursor_y, 
+                                    scroll_pos_x, scroll_pos_y)
+                        redo_stack.clear()
+                        
+                        text[cursor_y], text[cursor_y - 1] = text[cursor_y - 1], text[cursor_y]
+                        cursor_y -= 1
+                        
+                        if cursor_y < scroll_pos_y:
+                            scroll_pos_y = cursor_y
+                        
+                        status_message = "Line moved up"
+                        status_time = time.time()
+                continue
+
+        elif key == curses.KEY_SF:  # Shift+Down - Move line(s) down
+            if text:
+                # Determine which lines to move
+                if select_mode:
+                    # Move the entire selected block
+                    start_y = min(select_start_y, cursor_y)
+                    end_y = max(select_start_y, cursor_y)
+                    
+                    # Can't move below last line
+                    if end_y < len(text) - 1:
+                        save_undo_state(undo_stack, text, cursor_x, cursor_y, 
+                                    scroll_pos_x, scroll_pos_y)
+                        redo_stack.clear()
+                        
+                        # Extract the selected block
+                        block = text[start_y:end_y + 1]
+                        
+                        # Remove the block
+                        del text[start_y:end_y + 1]
+                        
+                        # Insert it one line down (after the block's original position)
+                        # Since we deleted it, insert at start_y
+                        text[start_y + 1:start_y + 1] = block
+                        
+                        # Update cursor and selection positions
+                        cursor_y = start_y + 1
+                        select_start_y = start_y + 1
+                        # Keep cursor_x the same
+                        
+                        if cursor_y >= scroll_pos_y + visible_height:
+                            scroll_pos_y = cursor_y - visible_height + 1
+                        
+                        status_message = f"Moved {len(block)} lines down"
+                        status_time = time.time()
+                else:
+                    # Move single line
+                    if cursor_y < len(text) - 1:
+                        save_undo_state(undo_stack, text, cursor_x, cursor_y, 
+                                    scroll_pos_x, scroll_pos_y)
+                        redo_stack.clear()
+                        
+                        text[cursor_y], text[cursor_y + 1] = text[cursor_y + 1], text[cursor_y]
+                        cursor_y += 1
+                        
+                        if cursor_y >= scroll_pos_y + visible_height:
+                            scroll_pos_y = cursor_y - visible_height + 1
+                        
+                        status_message = "Line moved down"
+                        status_time = time.time()
+                continue
+            
 
         # Ctrl+U → Undo
         elif key == keybindings['undo']:  # Ctrl+U
