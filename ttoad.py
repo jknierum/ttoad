@@ -973,7 +973,7 @@ def execute_terminal_command(command, cwd=None):
             shell=True,
             capture_output=True,
             text=True,
-            timeout=10,  # Prevent hanging
+#            timeout=10,  # Prevent hanging
             cwd=cwd  # Set working directory
         )
 
