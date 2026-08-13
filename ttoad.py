@@ -961,19 +961,20 @@ def get_comment_char(filename):
     # Then check by extension
     return comment_map.get(ext, '#')
 
-def execute_terminal_command(command):
+def execute_terminal_command(command, cwd=None):
     """Execute a shell command and return output"""
     if not command.strip():
         return ""
 
     try:
-        # Use subprocess to run the command
+        # Use subprocess to run the command with the specified working directory
         result = subprocess.run(
             command,
             shell=True,
             capture_output=True,
             text=True,
-            timeout=10  # Prevent hanging
+            timeout=10,  # Prevent hanging
+            cwd=cwd  # Set working directory
         )
 
         # Combine stdout and stderr
@@ -1321,7 +1322,7 @@ def editior(stdscr, filename):
             if len(terminal_display) > max_width:
                 terminal_display = terminal_display[-max_width:]
 
-            safe_addstr(stdscr, height - 1, 0, terminal_display,
+            safe_addstr(stdscr, height - 2, left_margin, terminal_display,
                         curses.color_pair(5) | curses.A_REVERSE | curses.A_BOLD)
 
             # Move cursor to end of terminal input
@@ -1460,7 +1461,12 @@ def editior(stdscr, filename):
                     terminal_history.append(terminal_command)
                     terminal_history_index = len(terminal_history)
 
-                    output = execute_terminal_command(terminal_command)
+                    # Get the directory of the current file
+                    file_dir = os.path.dirname(filename) if filename else os.getcwd()
+                    if not file_dir:  # If filename has no directory (just a filename)
+                        file_dir = os.getcwd()
+
+                    output = execute_terminal_command(terminal_command, cwd=file_dir)
                     if output:
                         output_lines = output.split('\n')
                         if len(output_lines) > 3:
@@ -1475,9 +1481,12 @@ def editior(stdscr, filename):
                 else:
                     terminal_command = ""
 
+                terminal_mode = False
+                mode = "normal"
+
             elif key == 27:  # ESC - exit terminal mode (ONLY WAY TO EXIT)
                 terminal_mode = False
-                status_message = "Exited terminal mode"
+                status_message = mode.upper()   #"Exited terminal mode"
                 status_time = time.time()
                 mode = "normal"
 
@@ -2919,4 +2928,3 @@ def editior(stdscr, filename):
 
 
 curses.wrapper(lambda stdscr: editior(stdscr, filename))
-
