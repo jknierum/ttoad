@@ -987,8 +987,8 @@ def execute_terminal_command(command, cwd=None):
             output = output[:1000] + "... (truncated)"
 
         return output.strip()
-    except subprocess.TimeoutExpired:
-        return "Command timed out after 10 seconds"
+#    except subprocess.TimeoutExpired:
+#        return "Command timed out after 10 seconds"
     except Exception as e:
         return f"Error: {str(e)}"
 
