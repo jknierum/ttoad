@@ -145,7 +145,7 @@ NORMAL_MODE = {
     'insert_mode': 105,  # 'i'
     'find_mode': 102,     # 'f'
     'find_mode_global': 70,  # 'F'
-    'jump_mode': 74,      # 'J'
+    'jump_mode': 106,      # 'J'
     'jump_mode_ctrl': 10,  # Ctrl+J
 
     # Selection
@@ -180,6 +180,9 @@ NORMAL_MODE = {
     'save': 19,            # Ctrl+S
     'save_as': 1,          # Ctrl+A
     'quit': 17,            # Ctrl+Q
+
+    # Terminal
+    'terminal': 111,       # 'o'
 }
 ''')
 
@@ -217,7 +220,7 @@ parser = argparse.ArgumentParser(
     'insert_mode': 105,      # 'i'
     'find_mode': 102,        # 'f'
     'find_mode_global': 70,  # 'F'
-    'jump_mode': 74,         # 'J'
+    'jump_mode': 106,         # 'J'
     'jump_mode_ctrl': 10,    # Ctrl+J
 
     # Selection
@@ -244,7 +247,10 @@ parser = argparse.ArgumentParser(
     # File operations
     'save': 19,              # Ctrl+S
     'save_as': 1,            # Ctrl+A
-    'quit': 17,              # Ctrl+Q
+    'quit': 17,              # Ctrl+query
+
+    # Terminal
+    'terminal': 111,         # 'o' - open terminal at bottom (ESC to exit)
 
     # Mouse
     click to set cursor
@@ -313,7 +319,7 @@ def open_file(filename):
             for line in f:
                 text.append(line.rstrip("\n"))  # remove newline
     except FileNotFoundError:
-        text = [""]  # start with empty text if file doesn’t exist
+        text = [""]  # start with empty text if file doesn't exist
     return text
 
 # Load the file
@@ -955,6 +961,39 @@ def get_comment_char(filename):
     # Then check by extension
     return comment_map.get(ext, '#')
 
+def execute_terminal_command(command):
+    """Execute a shell command and return output"""
+    if not command.strip():
+        return ""
+
+    try:
+        # Use subprocess to run the command
+        result = subprocess.run(
+            command,
+            shell=True,
+            capture_output=True,
+            text=True,
+            timeout=10  # Prevent hanging
+        )
+
+        # Combine stdout and stderr
+        output = result.stdout
+        if result.stderr:
+            output += result.stderr
+
+        # Truncate long output to prevent UI issues
+        if len(output) > 1000:
+            output = output[:1000] + "... (truncated)"
+
+        return output.strip()
+    except subprocess.TimeoutExpired:
+        return "Command timed out after 10 seconds"
+    except Exception as e:
+        return f"Error: {str(e)}"
+
+
+
+
 def editior(stdscr, filename):
     # Load user configuration
     keybindings, settings = load_config()
@@ -1076,6 +1115,12 @@ def editior(stdscr, filename):
     mouse_click_start_y = 0
     mouse_click_start_x = 0
 
+    terminal_mode = False
+    terminal_command = ""
+    terminal_output = ""
+    terminal_history = []
+    terminal_history_index = -1
+
     def get_tab_level(line, tab_size=4):
         count = 0
 
@@ -1175,13 +1220,18 @@ def editior(stdscr, filename):
 
             screen_line_y = line_idx
 
+            #Set highlight colour
+            modeColour = curses.color_pair(5)
+            if mode == 'insert':
+                    modeColour = curses.color_pair(4)
+
             # Draw line numbers
             line_count = str(i + 1 + scroll_pos_y)  # +scroll_pos_y to show actual line number
             line_num_width = 4
 
             if i == cursor_y - scroll_pos_y:
                 stdscr.addstr(i + top_margin, 0, str(int(line_count)).rjust(line_num_width + 1),
-                             curses.color_pair(5) | curses.A_REVERSE | curses.A_BOLD)
+                             modeColour | curses.A_REVERSE | curses.A_BOLD)
             else:
                 stdscr.addstr(i + top_margin, 0, str(int(line_count)).rjust(line_num_width),
                              curses.color_pair(1))
@@ -1224,10 +1274,17 @@ def editior(stdscr, filename):
                 # else: normal text - already handled by syntax highlighter
 
         #MODE DISPLAY
-        if select_mode:
+        if terminal_mode:
+            mode_dis = "TERMINAL"
+        elif select_mode:
             mode_dis = "SELECT"
 
-        stdscr.addstr(height - 2, left_margin, " " + mode_dis + " ", curses.color_pair(5) | curses.A_REVERSE | curses.A_BOLD)
+        modeColour = curses.color_pair(5)
+        if mode == 'insert':
+                modeColour = curses.color_pair(4)
+
+        stdscr.addstr(height - 2, left_margin, " " + mode_dis + " ", modeColour | curses.A_REVERSE | curses.A_BOLD)
+
 
         #YANKED
         if yanked:
@@ -1247,6 +1304,31 @@ def editior(stdscr, filename):
                 curses.color_pair(1)
             )
 
+
+        # Terminal display at bottom
+        if terminal_mode:
+            # Clear the status line and show terminal prompt
+            stdscr.move(height - 1, 0)
+            stdscr.clrtoeol()
+            prompt = "$ " if os.name != 'nt' else "> "
+
+            # Calculate available width for terminal input
+            terminal_prompt = f" TERMINAL: {prompt}"
+            terminal_display = terminal_prompt + terminal_command
+
+            # Truncate if too long
+            max_width = width - 1
+            if len(terminal_display) > max_width:
+                terminal_display = terminal_display[-max_width:]
+
+            safe_addstr(stdscr, height - 1, 0, terminal_display,
+                        curses.color_pair(5) | curses.A_REVERSE | curses.A_BOLD)
+
+            # Move cursor to end of terminal input
+            cursor_pos = len(terminal_prompt) + len(terminal_command)
+            if cursor_pos > width - 1:
+                cursor_pos = width - 1
+            stdscr.move(height - 1, cursor_pos)
 
         #Auto complete
         if mode == "find":
@@ -1329,8 +1411,84 @@ def editior(stdscr, filename):
 
         key = stdscr.getch()
 
+        # TERMINAL MODE - PROCESS FIRST (blocks ALL other keys including 'o')
+        if terminal_mode:
+            # All terminal input is handled here - this runs BEFORE any other key checks
+            if key == curses.KEY_UP:  # Command history - up
+                if terminal_history:
+                    if terminal_history_index > 0:
+                        terminal_history_index -= 1
+                        terminal_command = terminal_history[terminal_history_index]
 
-        # Handle mouse events
+            elif key == curses.KEY_DOWN:  # Command history - down
+                if terminal_history:
+                    if terminal_history_index < len(terminal_history) - 1:
+                        terminal_history_index += 1
+                        terminal_command = terminal_history[terminal_history_index]
+                    else:
+                        terminal_history_index = len(terminal_history)
+                        terminal_command = ""
+
+            elif key == curses.KEY_LEFT:  # Move cursor left in terminal
+                pass
+
+            elif key == curses.KEY_RIGHT:  # Move cursor right in terminal
+                pass
+
+            elif key == curses.KEY_HOME:  # Move to start of terminal input
+                pass
+
+            elif key == curses.KEY_END:  # Move to end of terminal input
+                pass
+
+            elif key == curses.KEY_BACKSPACE or key == 127:  # Backspace
+                if terminal_command:
+                    terminal_command = terminal_command[:-1]
+
+            elif key == curses.KEY_DC:  # Delete key
+                pass
+
+            elif key == 9:  # Tab - basic completion
+                if terminal_history and terminal_command == "":
+                    terminal_command = terminal_history[-1]
+
+            elif key == 13 or key == 10:  # Enter key
+                if terminal_command.strip():
+                    status_message = f"Executing: {terminal_command}"
+                    status_time = time.time()
+
+                    terminal_history.append(terminal_command)
+                    terminal_history_index = len(terminal_history)
+
+                    output = execute_terminal_command(terminal_command)
+                    if output:
+                        output_lines = output.split('\n')
+                        if len(output_lines) > 3:
+                            output = '\n'.join(output_lines[:3]) + " ..."
+                        status_message = output
+                        status_time = time.time()
+                    else:
+                        status_message = "Command executed (no output)"
+                        status_time = time.time()
+
+                    terminal_command = ""
+                else:
+                    terminal_command = ""
+
+            elif key == 27:  # ESC - exit terminal mode (ONLY WAY TO EXIT)
+                terminal_mode = False
+                status_message = "Exited terminal mode"
+                status_time = time.time()
+                mode = "normal"
+
+            elif 32 <= key <= 126:  # Printable characters (including 'o')
+                terminal_command += chr(key)
+
+            # All other keys are ignored in terminal mode
+            # Continue to next loop iteration - skip ALL other processing
+            continue
+
+        # Handle mouse events (only if not in terminal mode)
         if key == curses.KEY_MOUSE:
             try:
                 _, mx, my, _, bstate = curses.getmouse()
@@ -1380,7 +1538,6 @@ def editior(stdscr, filename):
                     elif bstate & curses.BUTTON1_RELEASED:
                         if text_y == cursor_y and text_x == cursor_x:
                             mouse_dragging = False
-#                            select_mode =  False
                         else:
                             select_mode = True
                             cursor_y = text_y
@@ -1682,9 +1839,21 @@ def editior(stdscr, filename):
                 select_mode = False
 
 
-            #ACTIONS (delete(d), copy(c)/yank(y), paste(p), paste over line(P), cut(x), jump forword(j), jump back(J), comment(/), tab(t), unTab(T))
+            # TERMINAL MODE - Open (only opens, doesn't toggle off)
+            elif key == keybindings.get('terminal', 111):  # 'o' key
+                if mode == "find":
+                    mode = "normal"
+                # Only enter terminal mode if not already in it
+                if not terminal_mode:
+                    terminal_mode = True
+                    terminal_command = ""
+                    terminal_output = ""
+                    select_mode = False
+                    mode = "normal"
+                    status_message = "Terminal mode"
+                    status_time = time.time()
 
-            #(),{},[],'',"" when selected
+            #ACTIONS (delete(d), copy(c)/yank(y), paste(p), paste over line(P), cut(x), jump forword(j), jump back(J), comment(/), tab(t), unTab(T))
             elif key == 91: #[]
                 if select_mode:
                     save_undo_state(
@@ -1758,7 +1927,7 @@ def editior(stdscr, filename):
 
 
             #JUMP j
-            elif key == keybindings['jump_mode']:
+            elif key == 106:# keybindings['jump_mode']:
                 jump_pos = ""
                 mode = "jump"
 
@@ -2327,7 +2496,7 @@ def editior(stdscr, filename):
                     scroll_pos_y = cursor_y
                 elif cursor_y >= scroll_pos_y + visible_height:
                     scroll_pos_y = cursor_y - visible_height + 1
-        
+
 
         if key == curses.KEY_SR:  # Shift+Up - Move line(s) up
             if text:
@@ -2336,45 +2505,45 @@ def editior(stdscr, filename):
                     # Move the entire selected block
                     start_y = min(select_start_y, cursor_y)
                     end_y = max(select_start_y, cursor_y)
-                    
+
                     # Can't move above line 0
                     if start_y > 0:
-                        save_undo_state(undo_stack, text, cursor_x, cursor_y, 
+                        save_undo_state(undo_stack, text, cursor_x, cursor_y,
                                     scroll_pos_x, scroll_pos_y)
                         redo_stack.clear()
-                        
+
                         # Extract the selected block
                         block = text[start_y:end_y + 1]
-                        
+
                         # Remove the block
                         del text[start_y:end_y + 1]
-                        
+
                         # Insert it one line up
                         text[start_y - 1:start_y - 1] = block
-                        
+
                         # Update cursor and selection positions
                         cursor_y = start_y - 1
                         select_start_y = start_y - 1
                         # Keep cursor_x the same
-                        
+
                         if cursor_y < scroll_pos_y:
                             scroll_pos_y = cursor_y
-                        
+
                         status_message = f"Moved {len(block)} lines up"
                         status_time = time.time()
                 else:
                     # Move single line
                     if cursor_y > 0:
-                        save_undo_state(undo_stack, text, cursor_x, cursor_y, 
+                        save_undo_state(undo_stack, text, cursor_x, cursor_y,
                                     scroll_pos_x, scroll_pos_y)
                         redo_stack.clear()
-                        
+
                         text[cursor_y], text[cursor_y - 1] = text[cursor_y - 1], text[cursor_y]
                         cursor_y -= 1
-                        
+
                         if cursor_y < scroll_pos_y:
                             scroll_pos_y = cursor_y
-                        
+
                         status_message = "Line moved up"
                         status_time = time.time()
                 continue
@@ -2386,50 +2555,50 @@ def editior(stdscr, filename):
                     # Move the entire selected block
                     start_y = min(select_start_y, cursor_y)
                     end_y = max(select_start_y, cursor_y)
-                    
+
                     # Can't move below last line
                     if end_y < len(text) - 1:
-                        save_undo_state(undo_stack, text, cursor_x, cursor_y, 
+                        save_undo_state(undo_stack, text, cursor_x, cursor_y,
                                     scroll_pos_x, scroll_pos_y)
                         redo_stack.clear()
-                        
+
                         # Extract the selected block
                         block = text[start_y:end_y + 1]
-                        
+
                         # Remove the block
                         del text[start_y:end_y + 1]
-                        
+
                         # Insert it one line down (after the block's original position)
                         # Since we deleted it, insert at start_y
                         text[start_y + 1:start_y + 1] = block
-                        
+
                         # Update cursor and selection positions
                         cursor_y = start_y + 1
                         select_start_y = start_y + 1
                         # Keep cursor_x the same
-                        
+
                         if cursor_y >= scroll_pos_y + visible_height:
                             scroll_pos_y = cursor_y - visible_height + 1
-                        
+
                         status_message = f"Moved {len(block)} lines down"
                         status_time = time.time()
                 else:
                     # Move single line
                     if cursor_y < len(text) - 1:
-                        save_undo_state(undo_stack, text, cursor_x, cursor_y, 
+                        save_undo_state(undo_stack, text, cursor_x, cursor_y,
                                     scroll_pos_x, scroll_pos_y)
                         redo_stack.clear()
-                        
+
                         text[cursor_y], text[cursor_y + 1] = text[cursor_y + 1], text[cursor_y]
                         cursor_y += 1
-                        
+
                         if cursor_y >= scroll_pos_y + visible_height:
                             scroll_pos_y = cursor_y - visible_height + 1
-                        
+
                         status_message = "Line moved down"
                         status_time = time.time()
                 continue
-            
+
 
         # Ctrl+U → Undo
         elif key == keybindings['undo']:  # Ctrl+U
@@ -2750,3 +2919,4 @@ def editior(stdscr, filename):
 
 
 curses.wrapper(lambda stdscr: editior(stdscr, filename))
+
