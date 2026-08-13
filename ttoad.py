@@ -1471,10 +1471,10 @@ def editior(stdscr, filename):
                         output_lines = output.split('\n')
                         if len(output_lines) > 3:
                             output = '\n'.join(output_lines[:3]) + " ..."
-                        status_message = output
+                        status_message = "Terminal Closed" #output
                         status_time = time.time()
                     else:
-                        status_message = "Command executed (no output)"
+                        status_message = "Terminal Closed"
                         status_time = time.time()
 
                     terminal_command = ""
